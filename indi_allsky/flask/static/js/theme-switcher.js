@@ -1,5 +1,5 @@
 (function () {
-  var THEMES = ['tokyo', 'nord', 'dracula', 'catppuccin'];
+  var THEMES = ['tokyo', 'carbon', 'graphite', 'obsidian', 'slate', 'crimson', 'forest', 'ash', 'catppuccin'];
   var STORAGE_KEY = 'indiTheme';
 
   var params = new URLSearchParams(window.location.search);
