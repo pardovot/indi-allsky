@@ -154,71 +154,7 @@
   --info: #60a5fa;
 }
 
-/* Original — stock Bootstrap 5 dark, for comparison */
-:root[data-theme="original"] {
-  --bg-0: #212529;
-  --bg-1: #212529;
-  --bg-2: #343a40;
-  --bg-3: #495057;
-  --border: #495057;
-  --border-strong: #6c757d;
-  --text: rgba(255,255,255,.85);
-  --text-dim: rgba(255,255,255,.55);
-  --text-bright: #ffffff;
-  --accent: #0d6efd;
-  --accent-hover: #3d8bfd;
-  --accent-warm: #ffc107;
-  --danger: #dc3545;
-  --success: #198754;
-  --info: #0dcaf0;
-}
-
-/* Undo structural overrides when in original mode */
-html[data-theme="original"] body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important; letter-spacing: normal; }
-html[data-theme="original"] .btn,
-html[data-theme="original"] .form-control,
-html[data-theme="original"] .form-select,
-html[data-theme="original"] .card,
-html[data-theme="original"] .modal-content,
-html[data-theme="original"] .dropdown-menu,
-html[data-theme="original"] .progress,
-html[data-theme="original"] .badge,
-html[data-theme="original"] .alert { border-radius: .375rem !important; }
-html[data-theme="original"] .nav-pills .nav-link { border-radius: .375rem; padding: .5rem 1rem; }
-html[data-theme="original"] .form-control, html[data-theme="original"] .form-select, html[data-theme="original"] textarea.form-control {
-  background: #fff !important; color: #212529 !important; border: 1px solid #ced4da !important; padding: .375rem .75rem !important;
-}
-html[data-theme="original"] .form-control:focus, html[data-theme="original"] .form-select:focus {
-  background: #fff !important; color: #212529 !important; border-color: #86b7fe !important; box-shadow: 0 0 0 .25rem rgba(13,110,253,.25) !important;
-}
-html[data-theme="original"] .form-label, html[data-theme="original"] label { color: rgba(255,255,255,.85); font-weight: 400; font-size: 1rem; }
-html[data-theme="original"] .progress { background: #e9ecef !important; border: none !important; height: 1rem; }
-html[data-theme="original"] .progress-bar { color: #fff; font-weight: 400; font-size: .75rem; }
-html[data-theme="original"] .progress-bar.bg-primary { background-color: #0d6efd !important; }
-html[data-theme="original"] .progress-bar.bg-success { background-color: #198754 !important; }
-html[data-theme="original"] .progress-bar.bg-danger { background-color: #dc3545 !important; }
-html[data-theme="original"] .progress-bar.bg-warning { background-color: #ffc107 !important; color: #000; }
-html[data-theme="original"] .progress-bar.bg-info { background-color: #0dcaf0 !important; color: #000; }
-html[data-theme="original"] .progress-bar.bg-secondary { background-color: #6c757d !important; color: #fff; }
-html[data-theme="original"] .progress-bar-striped { background-image: linear-gradient(45deg, rgba(255,255,255,.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.15) 50%, rgba(255,255,255,.15) 75%, transparent 75%, transparent) !important; }
-html[data-theme="original"] .badge.bg-primary { background-color: #0d6efd !important; color: #fff; }
-html[data-theme="original"] .badge.bg-success { background-color: #198754 !important; color: #fff; }
-html[data-theme="original"] .badge.bg-danger { background-color: #dc3545 !important; color: #fff; }
-html[data-theme="original"] .badge.bg-warning { background-color: #ffc107 !important; color: #000; }
-html[data-theme="original"] .badge.bg-info { background-color: #0dcaf0 !important; color: #000; }
-html[data-theme="original"] .badge.bg-secondary { background-color: #6c757d !important; color: #fff; }
-html[data-theme="original"] .btn { font-weight: 400; padding: .375rem .75rem; }
-html[data-theme="original"] .btn-primary { background: #0d6efd; border-color: #0d6efd; color: #fff; }
-html[data-theme="original"] .btn-warning { background: #ffc107; border-color: #ffc107; color: #000; }
-html[data-theme="original"] .table thead th { background: transparent; color: #fff; text-transform: none; font-size: 1rem; letter-spacing: normal; font-weight: 700; }
-html[data-theme="original"] main .col.pt-4 { padding-left: var(--bs-gutter-x,.75rem); padding-right: var(--bs-gutter-x,.75rem); padding-top: 1.5rem !important; padding-bottom: 0; }
-html[data-theme="original"] h1, html[data-theme="original"] h2, html[data-theme="original"] h3, html[data-theme="original"] h4, html[data-theme="original"] h5, html[data-theme="original"] h6 { font-weight: 500; letter-spacing: normal; color: #fff; }
-html[data-theme="original"] h1 { font-size: 2.5rem; }
-html[data-theme="original"] h2 { font-size: 2rem; }
-html[data-theme="original"] h3 { font-size: 1.75rem; }
-html[data-theme="original"] body.bg-dark { background: rgba(33,37,41,.75) !important; }
-html[data-theme="original"] .nav-tabs .nav-link { color: rgba(255,255,255,.55); border: 1px solid transparent; border-top-left-radius: .375rem; border-top-right-radius: .375rem; padding: .5rem 1rem; }
-html[data-theme="original"] .nav-tabs .nav-link.active { color: #495057; background: #fff; border-color: #dee2e6 #dee2e6 #fff; }
+/* Original — theme-switcher.js disables this entire stylesheet when "original" is selected. */
 
 body, html { font-family: 'Inter', system-ui, -apple-system, sans-serif; letter-spacing: -.005em; color: var(--text); }
 code, pre, .font-monospace { font-family: 'JetBrains Mono', ui-monospace, monospace; }
@@ -361,34 +297,8 @@ h3 { font-size: 1.15rem; margin-bottom: .75rem; }
 .badge.bg-info { background-color: var(--info) !important; color: #0a0e1a; }
 .badge.bg-secondary { background-color: var(--bg-3) !important; color: var(--text-dim); }
 
-/* ===== Theme switcher UI (injected by theme-switcher.js) ===== */
-#theme-switcher { position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; font-family: 'Inter', system-ui, sans-serif; }
-#theme-switcher-toggle {
-  width: 42px; height: 42px; border-radius: 50%;
-  background: var(--bg-1); border: 1px solid var(--border); color: var(--text);
-  font-size: 1.15rem; cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0,0,0,.5);
-  display: flex; align-items: center; justify-content: center;
-  transition: all .15s;
-}
-#theme-switcher-toggle:hover { background: var(--bg-2); border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
-#theme-switcher-menu {
-  position: absolute; bottom: 52px; right: 0;
-  background: var(--bg-1); border: 1px solid var(--border); border-radius: 8px;
-  padding: .35rem; min-width: 150px;
-  box-shadow: 0 8px 28px rgba(0,0,0,.55);
-}
-#theme-switcher-menu[hidden] { display: none; }
-#theme-switcher-menu button {
-  display: block; width: 100%; text-align: left;
-  background: transparent; border: none; color: var(--text-dim);
-  padding: .45rem .7rem; border-radius: 5px; cursor: pointer;
-  font-size: .85rem; text-transform: capitalize;
-  transition: background .1s, color .1s;
-}
-#theme-switcher-menu button:hover { background: var(--bg-3); color: var(--text-bright); }
-#theme-switcher-menu button.active { background: var(--bg-3); color: var(--accent); font-weight: 600; }
-#theme-switcher-menu button.active::before { content: "● "; }
+/* Theme switcher UI styles are injected by theme-switcher.js so they survive
+   when this entire stylesheet is disabled (in "original" mode). */
 
 /* Camera select in sidebar */
 #form_camera_select .form-select { background: var(--bg-2) !important; color: var(--accent-warm) !important; border: 1px solid var(--border); }
