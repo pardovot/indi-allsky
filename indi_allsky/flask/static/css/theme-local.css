@@ -139,5 +139,26 @@ h3 { font-size: 1.15rem; margin-bottom: .75rem; }
 /* Images with rounded corners in galleries */
 .gallery img, .photoswipe-gallery img { border-radius: 6px; }
 
+/* Progress bars — dark track, softer fills */
+.progress { background: var(--bg-2) !important; border: 1px solid var(--border); border-radius: 6px; height: 1.1rem; overflow: hidden; }
+.progress-bar { color: #0a0e1a; font-weight: 600; font-size: .75rem; }
+.progress-bar.bg-primary, .progress-bar:not([class*="bg-"]) { background-color: var(--accent) !important; }
+.progress-bar.bg-success { background-color: var(--success) !important; }
+.progress-bar.bg-danger { background-color: var(--danger) !important; }
+.progress-bar.bg-warning { background-color: var(--accent-warm) !important; }
+.progress-bar.bg-info { background-color: var(--info) !important; }
+.progress-bar.bg-secondary { background-color: var(--bg-3) !important; color: var(--text-dim); }
+/* Tone down the diagonal stripe contrast */
+.progress-bar-striped { background-image: linear-gradient(45deg, rgba(0,0,0,.12) 25%, transparent 25%, transparent 50%, rgba(0,0,0,.12) 50%, rgba(0,0,0,.12) 75%, transparent 75%, transparent) !important; background-size: 1rem 1rem; }
+
+/* Badge legend chips (User/System/Nice/I/O Wait, Used/Cache/Swap) */
+.badge, span.badge { font-weight: 500; padding: .35em .6em; border-radius: 5px; }
+.badge.bg-primary { background-color: var(--accent) !important; color: #0a0e1a; }
+.badge.bg-success { background-color: var(--success) !important; color: #0a0e1a; }
+.badge.bg-danger { background-color: var(--danger) !important; color: #0a0e1a; }
+.badge.bg-warning { background-color: var(--accent-warm) !important; color: #0a0e1a; }
+.badge.bg-info { background-color: var(--info) !important; color: #0a0e1a; }
+.badge.bg-secondary { background-color: var(--bg-3) !important; color: var(--text-dim); }
+
 /* Camera select in sidebar */
 #form_camera_select .form-select { background: var(--bg-2) !important; color: var(--accent-warm) !important; border: 1px solid var(--border); }
