@@ -1,7 +1,9 @@
 /* Local dark theme overlay — loaded after bootstrap.min.css and style.css */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-:root {
+/* ===== Palettes ===== */
+/* Default + Tokyo Night */
+:root, :root[data-theme="tokyo"] {
   --bg-0: #0a0e1a;
   --bg-1: #131826;
   --bg-2: #1c2333;
@@ -17,6 +19,63 @@
   --danger: #f7768e;
   --success: #9ece6a;
   --info: #7dcfff;
+}
+
+/* Nord — cool blue-grey */
+:root[data-theme="nord"] {
+  --bg-0: #2e3440;
+  --bg-1: #3b4252;
+  --bg-2: #434c5e;
+  --bg-3: #4c566a;
+  --border: #434c5e;
+  --border-strong: #4c566a;
+  --text: #d8dee9;
+  --text-dim: #81a1c1;
+  --text-bright: #eceff4;
+  --accent: #88c0d0;
+  --accent-hover: #8fbcbb;
+  --accent-warm: #ebcb8b;
+  --danger: #bf616a;
+  --success: #a3be8c;
+  --info: #5e81ac;
+}
+
+/* Dracula — purple-on-dark */
+:root[data-theme="dracula"] {
+  --bg-0: #282a36;
+  --bg-1: #343746;
+  --bg-2: #44475a;
+  --bg-3: #565d7f;
+  --border: #44475a;
+  --border-strong: #6272a4;
+  --text: #f8f8f2;
+  --text-dim: #a0a3b8;
+  --text-bright: #ffffff;
+  --accent: #bd93f9;
+  --accent-hover: #d6acff;
+  --accent-warm: #ffb86c;
+  --danger: #ff5555;
+  --success: #50fa7b;
+  --info: #8be9fd;
+}
+
+/* Catppuccin Mocha — warm dark */
+:root[data-theme="catppuccin"] {
+  --bg-0: #1e1e2e;
+  --bg-1: #181825;
+  --bg-2: #313244;
+  --bg-3: #45475a;
+  --border: #313244;
+  --border-strong: #585b70;
+  --text: #cdd6f4;
+  --text-dim: #a6adc8;
+  --text-bright: #ffffff;
+  --accent: #89b4fa;
+  --accent-hover: #b4befe;
+  --accent-warm: #f9e2af;
+  --danger: #f38ba8;
+  --success: #a6e3a1;
+  --info: #74c7ec;
 }
 
 body, html { font-family: 'Inter', system-ui, -apple-system, sans-serif; letter-spacing: -.005em; color: var(--text); }
@@ -159,6 +218,35 @@ h3 { font-size: 1.15rem; margin-bottom: .75rem; }
 .badge.bg-warning { background-color: var(--accent-warm) !important; color: #0a0e1a; }
 .badge.bg-info { background-color: var(--info) !important; color: #0a0e1a; }
 .badge.bg-secondary { background-color: var(--bg-3) !important; color: var(--text-dim); }
+
+/* ===== Theme switcher UI (injected by theme-switcher.js) ===== */
+#theme-switcher { position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; font-family: 'Inter', system-ui, sans-serif; }
+#theme-switcher-toggle {
+  width: 42px; height: 42px; border-radius: 50%;
+  background: var(--bg-1); border: 1px solid var(--border); color: var(--text);
+  font-size: 1.15rem; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+#theme-switcher-toggle:hover { background: var(--bg-2); border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+#theme-switcher-menu {
+  position: absolute; bottom: 52px; right: 0;
+  background: var(--bg-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: .35rem; min-width: 150px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.55);
+}
+#theme-switcher-menu[hidden] { display: none; }
+#theme-switcher-menu button {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: none; color: var(--text-dim);
+  padding: .45rem .7rem; border-radius: 5px; cursor: pointer;
+  font-size: .85rem; text-transform: capitalize;
+  transition: background .1s, color .1s;
+}
+#theme-switcher-menu button:hover { background: var(--bg-3); color: var(--text-bright); }
+#theme-switcher-menu button.active { background: var(--bg-3); color: var(--accent); font-weight: 600; }
+#theme-switcher-menu button.active::before { content: "● "; }
 
 /* Camera select in sidebar */
 #form_camera_select .form-select { background: var(--bg-2) !important; color: var(--accent-warm) !important; border: 1px solid var(--border); }
