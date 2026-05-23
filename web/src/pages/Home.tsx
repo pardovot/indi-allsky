@@ -24,7 +24,6 @@ interface LatestImage {
 }
 
 const CAMERA_PREF_KEY = 'allsky_camera_id';
-const NIGHT_PREF_KEY = 'allsky_night';
 const REFRESH_PREF_KEY = 'allsky_refresh_ms';
 
 function getPrefNumber(key: string, fallback: number): number {
@@ -46,10 +45,6 @@ export default function Home() {
   const [cameraId, setCameraId] = useState<number | null>(() =>
     getPrefNumber(CAMERA_PREF_KEY, NaN) || null,
   );
-  const [night, setNight] = useState<boolean>(() => {
-    const v = localStorage.getItem(NIGHT_PREF_KEY);
-    return v === null ? true : v === '1';
-  });
   const [refreshMs, setRefreshMs] = useState<number>(() =>
     getPrefNumber(REFRESH_PREF_KEY, 15_000),
   );
@@ -58,9 +53,6 @@ export default function Home() {
   useEffect(() => {
     if (cameraId !== null) localStorage.setItem(CAMERA_PREF_KEY, String(cameraId));
   }, [cameraId]);
-  useEffect(() => {
-    localStorage.setItem(NIGHT_PREF_KEY, night ? '1' : '0');
-  }, [night]);
   useEffect(() => {
     localStorage.setItem(REFRESH_PREF_KEY, String(refreshMs));
   }, [refreshMs]);
@@ -78,12 +70,11 @@ export default function Home() {
     }
   }, [camerasQ.data, cameraId]);
 
+  // night=1 lets the backend skip "daytime capture disabled" messaging and always return latest.
   const imageQ = useQuery({
-    queryKey: ['latest-image', cameraId, night],
+    queryKey: ['latest-image', cameraId],
     queryFn: () =>
-      api<LatestImage>(
-        `/latest-image?camera_id=${cameraId}&limit_s=900&night=${night ? 1 : 0}`,
-      ),
+      api<LatestImage>(`/latest-image?camera_id=${cameraId}&limit_s=900&night=1`),
     enabled: cameraId !== null,
     refetchInterval: refreshMs,
   });
@@ -107,78 +98,75 @@ export default function Home() {
   }
 
   const loading = imageQ.isLoading || camerasQ.isLoading;
-  const showPlaceholder = !url;
+  const noCameras = !camerasQ.isLoading && (camerasQ.data?.length ?? 0) === 0;
 
   return (
-    <div className="min-h-full flex">
+    <div className="min-h-full flex flex-col">
       <NavDrawer open={navOpen} onClose={() => setNavOpen(false)} />
 
-      <div className="flex-1 min-w-0 flex flex-col">
-        <Header
-          cameras={camerasQ.data ?? []}
-          cameraId={cameraId}
-          onCameraChange={setCameraId}
-          onToggleNav={() => setNavOpen((v) => !v)}
-          onOpenStatus={() => setStatusOpen(true)}
-        />
+      <Header
+        cameras={camerasQ.data ?? []}
+        cameraId={cameraId}
+        camerasLoading={camerasQ.isLoading}
+        onCameraChange={setCameraId}
+        onToggleNav={() => setNavOpen((v) => !v)}
+        onOpenStatus={() => setStatusOpen(true)}
+      />
 
-        <main className="flex-1 flex flex-col items-center px-4 py-4">
-          <div className="w-full max-w-5xl flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <ImageControls
-                night={night}
-                onNightChange={setNight}
-                refreshMs={refreshMs}
-                onRefreshChange={setRefreshMs}
-                lastUpdated={lastUpdated}
-              />
-              {message && (
-                <div
-                  className="text-ink-dim text-sm flex-1 min-w-[200px] text-right"
-                  dangerouslySetInnerHTML={{ __html: message }}
-                />
-              )}
+      <main className="flex-1 flex flex-col items-center px-4 py-4 gap-3">
+        <div className="w-full flex items-center justify-between gap-3 flex-wrap max-w-7xl">
+          <ImageControls
+            refreshMs={refreshMs}
+            onRefreshChange={setRefreshMs}
+            lastUpdated={lastUpdated}
+            dimensions={url && dims ? { width: dims.width, height: dims.height } : null}
+          />
+          {message && (
+            <div
+              className="text-ink-dim text-sm text-right"
+              dangerouslySetInnerHTML={{ __html: message }}
+            />
+          )}
+        </div>
+
+        <div className="relative flex items-center justify-center w-full max-w-7xl flex-1 min-h-0">
+          {noCameras ? (
+            <div className="aspect-video w-full max-w-3xl border border-danger/40 rounded-lg flex items-center justify-center bg-danger/5">
+              <div className="text-center space-y-2 px-4">
+                <div className="text-danger text-base font-medium">
+                  No cameras connected
+                </div>
+                <div className="text-ink-dim text-sm max-w-md">
+                  No cameras have been registered yet. Connect a camera and
+                  start the indi-allsky service, then refresh.
+                </div>
+              </div>
             </div>
-
-            <div className="relative w-full bg-bg-1 border border-edge rounded-lg overflow-hidden">
-              {url ? (
-                <img
-                  ref={imgRef}
-                  src={url}
-                  alt="Latest sky"
-                  onClick={goFullscreen}
-                  className="block w-full h-auto max-h-[78vh] object-contain cursor-zoom-in select-none"
-                />
-              ) : (
-                <div className="aspect-video w-full flex items-center justify-center">
-                  <div className="text-center space-y-1">
-                    <div className="text-ink-dim text-sm">
-                      {loading ? 'Loading…' : 'No image available'}
-                    </div>
-                    {!loading && (
-                      <div className="text-ink-dim/60 text-xs">
-                        Capture may be paused or down
-                      </div>
-                    )}
+          ) : url ? (
+            <img
+              ref={imgRef}
+              src={url}
+              alt="Latest sky"
+              onClick={goFullscreen}
+              className="max-w-full max-h-[82vh] w-auto h-auto object-contain rounded-md cursor-zoom-in select-none ring-1 ring-edge"
+            />
+          ) : (
+            <div className="aspect-video w-full max-w-3xl border border-edge rounded-lg flex items-center justify-center bg-bg-1/30">
+              <div className="text-center space-y-1">
+                <div className="text-ink-dim text-sm">
+                  {loading ? 'Loading…' : 'No image available'}
+                </div>
+                {!loading && (
+                  <div className="text-ink-dim/60 text-xs">
+                    Capture may be paused or down
                   </div>
-                </div>
-              )}
-
-              {dims && dims.url && (
-                <div className="absolute bottom-2 right-2 text-[11px] text-ink-dim font-mono bg-bg-0/70 backdrop-blur px-2 py-0.5 rounded">
-                  {dims.width}×{dims.height}
-                </div>
-              )}
-
-              {showPlaceholder && (
-                <div className="absolute top-2 right-2 text-[11px] text-ink-dim font-mono bg-bg-0/70 backdrop-blur px-2 py-0.5 rounded">
-                  no signal
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </main>
-      </div>
+          )}
+
+        </div>
+      </main>
 
       <StatusPanel
         cameraId={cameraId}

@@ -1,9 +1,8 @@
 interface ImageControlsProps {
-  night: boolean;
-  onNightChange: (v: boolean) => void;
   refreshMs: number;
   onRefreshChange: (ms: number) => void;
   lastUpdated: Date | null;
+  dimensions?: { width: number; height: number } | null;
 }
 
 const REFRESH_OPTIONS: { label: string; ms: number }[] = [
@@ -14,37 +13,15 @@ const REFRESH_OPTIONS: { label: string; ms: number }[] = [
 ];
 
 export default function ImageControls({
-  night,
-  onNightChange,
   refreshMs,
   onRefreshChange,
   lastUpdated,
+  dimensions,
 }: ImageControlsProps) {
   return (
-    <div className="flex items-center flex-wrap justify-center gap-2 text-xs">
-      <div className="inline-flex rounded-md bg-bg-2 border border-edge overflow-hidden" role="group">
-        <button
-          onClick={() => onNightChange(true)}
-          className={[
-            'px-3 py-1 transition-colors',
-            night ? 'bg-bg-3 text-ink-bright' : 'text-ink-dim hover:text-ink',
-          ].join(' ')}
-        >
-          Night
-        </button>
-        <button
-          onClick={() => onNightChange(false)}
-          className={[
-            'px-3 py-1 transition-colors',
-            !night ? 'bg-bg-3 text-ink-bright' : 'text-ink-dim hover:text-ink',
-          ].join(' ')}
-        >
-          Day
-        </button>
-      </div>
-
+    <div className="flex items-center gap-3 text-xs text-ink-dim flex-wrap">
       <div className="inline-flex items-center gap-1 rounded-md bg-bg-2 border border-edge px-2 py-1">
-        <span className="text-ink-dim">Refresh</span>
+        <span>Refresh</span>
         <select
           value={refreshMs}
           onChange={(e) => onRefreshChange(Number(e.target.value))}
@@ -57,10 +34,15 @@ export default function ImageControls({
           ))}
         </select>
       </div>
-
       {lastUpdated && (
-        <span className="text-ink-dim">
-          Updated {lastUpdated.toLocaleTimeString()}
+        <span>
+          Updated{' '}
+          {lastUpdated.toLocaleTimeString(undefined, { hour12: false })}
+        </span>
+      )}
+      {dimensions && (
+        <span className="font-mono">
+          {dimensions.width}×{dimensions.height}
         </span>
       )}
     </div>

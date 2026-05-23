@@ -139,6 +139,15 @@ def latest_image():
     return jsonify(view.get_objects())
 
 
+@bp_api_v2.route('/loop', methods=['GET'])
+@jwt_required()
+def loop():
+    # reuse existing JsonImageLoopView — reads camera_id/limit_s/limit/timestamp from request.args
+    from .views import JsonImageLoopView
+    view = JsonImageLoopView()
+    return jsonify(view.get_objects())
+
+
 @bp_api_v2.route('/status', methods=['GET'])
 @jwt_required()
 def status():

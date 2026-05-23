@@ -18,7 +18,7 @@ export const menu: MenuGroup[] = [
     label: 'View',
     items: [
       { label: 'Latest',           to: '/',                                native: true },
-      { label: 'Loop',             to: '/indi-allsky/loop' },
+      { label: 'Loop',             to: '/loop',                            native: true },
     ],
   },
   {
