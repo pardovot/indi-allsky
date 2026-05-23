@@ -10,15 +10,18 @@ from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 
 from flask_login import LoginManager
+from flask_jwt_extended import JWTManager
 
 db = SQLAlchemy()
 migrate = Migrate()
 csrf = CSRFProtect()
+jwt = JWTManager()
 
 from .views import bp_allsky  # noqa: E402
 from .auth_views import bp_auth_allsky  # noqa: E402
 from .syncapi_views import bp_syncapi_allsky  # noqa: E402
 from .actionapi_views import bp_actionapi_allsky  # noqa: E402
+from .api_v2_views import bp_api_v2  # noqa: E402
 
 
 dictConfig({
@@ -95,15 +98,31 @@ def create_app():
     #    "poolclass" : NullPool,  # disable connection pooling
     #}
 
+    # JWT defaults (overridable via flask.json)
+    app.config.setdefault('JWT_SECRET_KEY', app.config.get('SECRET_KEY'))
+    app.config.setdefault('JWT_ACCESS_TOKEN_EXPIRES', 3600)         # 1h
+    app.config.setdefault('JWT_REFRESH_TOKEN_EXPIRES', 1209600)     # 14d
+    app.config.setdefault('JWT_TOKEN_LOCATION', ['headers', 'cookies'])
+    app.config.setdefault('JWT_REFRESH_COOKIE_PATH', '/indi-allsky/api/v2/auth')
+    app.config.setdefault('JWT_COOKIE_SECURE', app.config.get('SESSION_COOKIE_SECURE', True))
+    app.config.setdefault('JWT_COOKIE_SAMESITE', 'Lax')
+    app.config.setdefault('JWT_COOKIE_CSRF_PROTECT', True)
+    app.config.setdefault('JWT_CSRF_IN_COOKIES', True)
+    app.config.setdefault('JWT_ACCESS_COOKIE_NAME', 'allsky_access')
+    app.config.setdefault('JWT_REFRESH_COOKIE_NAME', 'allsky_refresh')
+
     csrf.init_app(app)
+    jwt.init_app(app)
 
     app.register_blueprint(bp_allsky)
     app.register_blueprint(bp_auth_allsky)
     app.register_blueprint(bp_syncapi_allsky)
     app.register_blueprint(bp_actionapi_allsky)
+    app.register_blueprint(bp_api_v2)
 
     csrf.exempt(bp_syncapi_allsky)  # disable CSRF for syncapi views
     csrf.exempt(bp_actionapi_allsky)  # disable CSRF for actionapi views
+    csrf.exempt(bp_api_v2)  # JWT has its own CSRF for cookie tokens
 
     db.init_app(app)
     migrate.init_app(app, db, directory=app.config['MIGRATION_FOLDER'])
@@ -120,6 +139,11 @@ def create_app():
     def load_user(user_id):
         # since the user_id is just the primary key of our user table, use it in the query for the user
         return IndiAllSkyDbUserTable.query.get(int(user_id))
+
+
+    @jwt.user_lookup_loader
+    def load_jwt_user(_jwt_header, jwt_data):
+        return IndiAllSkyDbUserTable.query.get(int(jwt_data['sub']))
 
 
     with app.app_context():

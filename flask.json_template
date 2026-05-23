@@ -20,6 +20,11 @@
     "WTF_CSRF_TIME_LIMIT" : 86400,
     "SECRET_KEY" : "CHANGEME",
 
+    "JWT_SECRET_KEY_comment" : "Separate key for /api/v2 JWTs. Defaults to SECRET_KEY if unset.",
+    "JWT_SECRET_KEY" : "CHANGEME",
+    "JWT_ACCESS_TOKEN_EXPIRES" : 3600,
+    "JWT_REFRESH_TOKEN_EXPIRES" : 1209600,
+
     "REMEMBER_COOKIE_DURATION" : 2678400,
     "REMEMBER_COOKIE_SECURE_comment" : "True will prevent using http-only mode",
     "REMEMBER_COOKIE_SECURE" : true,
