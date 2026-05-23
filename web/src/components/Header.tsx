@@ -36,9 +36,9 @@ export default function Header({
       <img
         src="/indi-allsky/static/images/logo_outline_full.png"
         alt="indi-allsky"
-        className="h-7 w-auto opacity-90"
+        className="h-9 w-auto opacity-90"
       />
-      <span className="text-ink-bright font-semibold tracking-tight hidden sm:inline">
+      <span className="text-ink-bright font-semibold tracking-tight hidden sm:inline text-base">
         indi-allsky
       </span>
 

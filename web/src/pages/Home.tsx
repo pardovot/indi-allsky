@@ -106,6 +106,9 @@ export default function Home() {
     }
   }
 
+  const loading = imageQ.isLoading || camerasQ.isLoading;
+  const showPlaceholder = !url;
+
   return (
     <div className="min-h-full flex">
       <NavDrawer open={navOpen} onClose={() => setNavOpen(false)} />
@@ -119,41 +122,61 @@ export default function Home() {
           onOpenStatus={() => setStatusOpen(true)}
         />
 
-        <main className="flex-1 flex flex-col items-center px-4 py-4 gap-3">
-          <ImageControls
-            night={night}
-            onNightChange={setNight}
-            refreshMs={refreshMs}
-            onRefreshChange={setRefreshMs}
-            lastUpdated={lastUpdated}
-          />
-
-          <div
-            className="text-ink-dim text-sm text-center min-h-[1.25rem]"
-            dangerouslySetInnerHTML={{ __html: message }}
-          />
-
-          <div className="flex-1 w-full flex items-center justify-center">
-            {url ? (
-              <img
-                ref={imgRef}
-                src={url}
-                alt="Latest sky"
-                onClick={goFullscreen}
-                className="max-w-full max-h-[80vh] w-auto h-auto object-contain rounded-md shadow-2xl cursor-zoom-in select-none"
+        <main className="flex-1 flex flex-col items-center px-4 py-4">
+          <div className="w-full max-w-5xl flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <ImageControls
+                night={night}
+                onNightChange={setNight}
+                refreshMs={refreshMs}
+                onRefreshChange={setRefreshMs}
+                lastUpdated={lastUpdated}
               />
-            ) : imageQ.isLoading || camerasQ.isLoading ? (
-              <div className="text-ink-dim">Loading…</div>
-            ) : (
-              <div className="text-ink-dim">No image available</div>
-            )}
-          </div>
-
-          {dims && dims.url && (
-            <div className="text-[11px] text-ink-dim font-mono">
-              {dims.width}×{dims.height}
+              {message && (
+                <div
+                  className="text-ink-dim text-sm flex-1 min-w-[200px] text-right"
+                  dangerouslySetInnerHTML={{ __html: message }}
+                />
+              )}
             </div>
-          )}
+
+            <div className="relative w-full bg-bg-1 border border-edge rounded-lg overflow-hidden">
+              {url ? (
+                <img
+                  ref={imgRef}
+                  src={url}
+                  alt="Latest sky"
+                  onClick={goFullscreen}
+                  className="block w-full h-auto max-h-[78vh] object-contain cursor-zoom-in select-none"
+                />
+              ) : (
+                <div className="aspect-video w-full flex items-center justify-center">
+                  <div className="text-center space-y-1">
+                    <div className="text-ink-dim text-sm">
+                      {loading ? 'Loading…' : 'No image available'}
+                    </div>
+                    {!loading && (
+                      <div className="text-ink-dim/60 text-xs">
+                        Capture may be paused or down
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {dims && dims.url && (
+                <div className="absolute bottom-2 right-2 text-[11px] text-ink-dim font-mono bg-bg-0/70 backdrop-blur px-2 py-0.5 rounded">
+                  {dims.width}×{dims.height}
+                </div>
+              )}
+
+              {showPlaceholder && (
+                <div className="absolute top-2 right-2 text-[11px] text-ink-dim font-mono bg-bg-0/70 backdrop-blur px-2 py-0.5 rounded">
+                  no signal
+                </div>
+              )}
+            </div>
+          </div>
         </main>
       </div>
 
