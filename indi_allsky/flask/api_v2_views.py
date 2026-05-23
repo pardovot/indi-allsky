@@ -137,3 +137,44 @@ def latest_image():
     from .views import JsonLatestImageView
     view = JsonLatestImageView()
     return jsonify(view.get_objects())
+
+
+@bp_api_v2.route('/status', methods=['GET'])
+@jwt_required()
+def status():
+    # reuse existing AjaxStatusUpdateView. Its dispatch_request reads request.args['camera_id']
+    # and returns a Flask response with {status_text: HTML}
+    from .views import AjaxStatusUpdateView
+    view = AjaxStatusUpdateView()
+    return view.dispatch_request()
+
+
+@bp_api_v2.route('/notifications', methods=['GET'])
+@jwt_required()
+def notifications_list():
+    from .views import AjaxNotificationView
+    view = AjaxNotificationView()
+    return view.get()  # reads request.args['camera_id']
+
+
+@bp_api_v2.route('/notifications/ack', methods=['POST'])
+@jwt_required()
+def notifications_ack():
+    from .views import AjaxNotificationView
+    view = AjaxNotificationView()
+    data = request.get_json(silent=True) or {}
+    camera_id = int(data.get('camera_id', 0))
+    ack_id = int(data.get('ack_id', 0))
+    if not ack_id:
+        return jsonify({'error': 'ack_id required'}), 400
+
+    from .models import IndiAllSkyDbNotificationTable
+    from sqlalchemy.orm.exc import NoResultFound
+    try:
+        notice = IndiAllSkyDbNotificationTable.query\
+            .filter(IndiAllSkyDbNotificationTable.id == ack_id).one()
+        notice.setAck()
+    except NoResultFound:
+        pass
+
+    return view.get(camera_id=camera_id)

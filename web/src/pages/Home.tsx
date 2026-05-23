@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import Header from '@/components/Header';
+import NavDrawer from '@/components/NavDrawer';
+import StatusPanel from '@/components/StatusPanel';
+import ImageControls from '@/components/ImageControls';
 
 interface Camera {
   id: number;
@@ -20,7 +23,16 @@ interface LatestImage {
   };
 }
 
-const REFRESH_MS = 15_000;
+const CAMERA_PREF_KEY = 'allsky_camera_id';
+const NIGHT_PREF_KEY = 'allsky_night';
+const REFRESH_PREF_KEY = 'allsky_refresh_ms';
+
+function getPrefNumber(key: string, fallback: number): number {
+  const v = localStorage.getItem(key);
+  if (v === null) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 function resolveImageUrl(url: string | null): string | null {
   if (!url) return null;
@@ -29,8 +41,29 @@ function resolveImageUrl(url: string | null): string | null {
 }
 
 export default function Home() {
-  const [cameraId, setCameraId] = useState<number | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [cameraId, setCameraId] = useState<number | null>(() =>
+    getPrefNumber(CAMERA_PREF_KEY, NaN) || null,
+  );
+  const [night, setNight] = useState<boolean>(() => {
+    const v = localStorage.getItem(NIGHT_PREF_KEY);
+    return v === null ? true : v === '1';
+  });
+  const [refreshMs, setRefreshMs] = useState<number>(() =>
+    getPrefNumber(REFRESH_PREF_KEY, 15_000),
+  );
   const imgRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    if (cameraId !== null) localStorage.setItem(CAMERA_PREF_KEY, String(cameraId));
+  }, [cameraId]);
+  useEffect(() => {
+    localStorage.setItem(NIGHT_PREF_KEY, night ? '1' : '0');
+  }, [night]);
+  useEffect(() => {
+    localStorage.setItem(REFRESH_PREF_KEY, String(refreshMs));
+  }, [refreshMs]);
 
   const camerasQ = useQuery({
     queryKey: ['cameras'],
@@ -38,21 +71,30 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (cameraId === null && camerasQ.data && camerasQ.data.length > 0) {
-      setCameraId(camerasQ.data[0].id);
+    const list = camerasQ.data;
+    if (!list || list.length === 0) return;
+    if (cameraId === null || !list.some((c) => c.id === cameraId)) {
+      setCameraId(list[0].id);
     }
   }, [camerasQ.data, cameraId]);
 
   const imageQ = useQuery({
-    queryKey: ['latest-image', cameraId],
+    queryKey: ['latest-image', cameraId, night],
     queryFn: () =>
-      api<LatestImage>(`/latest-image?camera_id=${cameraId}&limit_s=900&night=1`),
+      api<LatestImage>(
+        `/latest-image?camera_id=${cameraId}&limit_s=900&night=${night ? 1 : 0}`,
+      ),
     enabled: cameraId !== null,
-    refetchInterval: REFRESH_MS,
+    refetchInterval: refreshMs,
   });
 
   const url = resolveImageUrl(imageQ.data?.latest_image.url ?? null);
   const message = imageQ.data?.latest_image.message || '';
+  const dims = imageQ.data?.latest_image;
+  const lastUpdated = useMemo(
+    () => (imageQ.dataUpdatedAt ? new Date(imageQ.dataUpdatedAt) : null),
+    [imageQ.dataUpdatedAt],
+  );
 
   function goFullscreen() {
     const el = imgRef.current;
@@ -65,33 +107,61 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-full flex flex-col">
-      <Header
-        cameras={camerasQ.data ?? []}
-        cameraId={cameraId}
-        onCameraChange={setCameraId}
-      />
+    <div className="min-h-full flex">
+      <NavDrawer open={navOpen} onClose={() => setNavOpen(false)} />
 
-      <main className="flex-1 flex flex-col items-center justify-center px-4 py-4 gap-3">
-        <div
-          className="text-ink-dim text-sm text-center min-h-[1.25rem]"
-          dangerouslySetInnerHTML={{ __html: message }}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <Header
+          cameras={camerasQ.data ?? []}
+          cameraId={cameraId}
+          onCameraChange={setCameraId}
+          onToggleNav={() => setNavOpen((v) => !v)}
+          onOpenStatus={() => setStatusOpen(true)}
         />
 
-        {url ? (
-          <img
-            ref={imgRef}
-            src={url}
-            alt="Latest sky"
-            onClick={goFullscreen}
-            className="max-w-full max-h-[85vh] w-auto h-auto object-contain rounded-md shadow-2xl cursor-zoom-in select-none"
+        <main className="flex-1 flex flex-col items-center px-4 py-4 gap-3">
+          <ImageControls
+            night={night}
+            onNightChange={setNight}
+            refreshMs={refreshMs}
+            onRefreshChange={setRefreshMs}
+            lastUpdated={lastUpdated}
           />
-        ) : imageQ.isLoading || camerasQ.isLoading ? (
-          <div className="text-ink-dim">Loading…</div>
-        ) : (
-          <div className="text-ink-dim">No image available</div>
-        )}
-      </main>
+
+          <div
+            className="text-ink-dim text-sm text-center min-h-[1.25rem]"
+            dangerouslySetInnerHTML={{ __html: message }}
+          />
+
+          <div className="flex-1 w-full flex items-center justify-center">
+            {url ? (
+              <img
+                ref={imgRef}
+                src={url}
+                alt="Latest sky"
+                onClick={goFullscreen}
+                className="max-w-full max-h-[80vh] w-auto h-auto object-contain rounded-md shadow-2xl cursor-zoom-in select-none"
+              />
+            ) : imageQ.isLoading || camerasQ.isLoading ? (
+              <div className="text-ink-dim">Loading…</div>
+            ) : (
+              <div className="text-ink-dim">No image available</div>
+            )}
+          </div>
+
+          {dims && dims.url && (
+            <div className="text-[11px] text-ink-dim font-mono">
+              {dims.width}×{dims.height}
+            </div>
+          )}
+        </main>
+      </div>
+
+      <StatusPanel
+        cameraId={cameraId}
+        open={statusOpen}
+        onClose={() => setStatusOpen(false)}
+      />
     </div>
   );
 }
