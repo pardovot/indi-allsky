@@ -2,22 +2,19 @@
 
 New React UI. Runs alongside the existing Flask/Jinja UI without touching it.
 
-## Dev
+## Dev (on the Pi)
 
 ```bash
 cd web
-cp .env.example .env
-# edit .env → set VITE_API_TARGET to your Pi (e.g. https://allsky.local)
-
+cp .env.example .env   # default VITE_API_TARGET=https://localhost is correct for on-Pi dev
 npm install
-npm run dev
+npm run dev -- --host  # --host to listen on all interfaces (browse from another machine)
 ```
 
-Open http://localhost:3000.
+Open `http://<pi-hostname>:3000` from any LAN browser.
 
 The Vite dev server proxies `/indi-allsky/api`, `/indi-allsky/images`, and
-`/indi-allsky/static` to the Pi. The Pi serves these via Apache (HTTPS,
-self-signed certs accepted by the proxy).
+`/indi-allsky/static` to local Apache (HTTPS, self-signed cert accepted).
 
 ## Backend requirement
 
