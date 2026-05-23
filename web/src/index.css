@@ -3,10 +3,28 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    color-scheme: dark;
+  }
   html, body, #root {
     height: 100%;
   }
   body {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Native <select> styling — use theme colors for the closed/popup state
+     where browsers honor them. */
+  select {
+    background-color: theme('colors.bg.2');
+    color: theme('colors.ink.DEFAULT');
+  }
+  select option {
+    background-color: theme('colors.bg.2');
+    color: theme('colors.ink.DEFAULT');
+  }
+  select option:checked {
+    background-color: theme('colors.bg.3');
+    color: theme('colors.ink.bright');
   }
 }

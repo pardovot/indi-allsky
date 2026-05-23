@@ -4,6 +4,7 @@ import { api } from '@/lib/api';
 import Header from '@/components/Header';
 import NavDrawer from '@/components/NavDrawer';
 import StatusPanel from '@/components/StatusPanel';
+import Select from '@/components/Select';
 
 interface Camera {
   id: number;
@@ -186,33 +187,19 @@ export default function Loop() {
             {playing ? 'Pause' : 'Play'}
           </button>
 
-          <Field label="History">
-            <select
-              value={settings.history_seconds}
-              onChange={(e) =>
-                setSettings({ ...settings, history_seconds: Number(e.target.value) })
-              }
-              className="bg-transparent text-ink focus:outline-none cursor-pointer"
-            >
-              {HISTORY_OPTIONS.map((o) => (
-                <option key={o.s} value={o.s}>{o.label}</option>
-              ))}
-            </select>
-          </Field>
+          <Select
+            label="History"
+            value={settings.history_seconds}
+            options={HISTORY_OPTIONS.map((o) => ({ value: o.s, label: o.label }))}
+            onChange={(v) => setSettings({ ...settings, history_seconds: v })}
+          />
 
-          <Field label="Speed">
-            <select
-              value={settings.frame_delay_ms}
-              onChange={(e) =>
-                setSettings({ ...settings, frame_delay_ms: Number(e.target.value) })
-              }
-              className="bg-transparent text-ink focus:outline-none cursor-pointer"
-            >
-              {SPEED_OPTIONS.map((o) => (
-                <option key={o.ms} value={o.ms}>{o.label}</option>
-              ))}
-            </select>
-          </Field>
+          <Select
+            label="Speed"
+            value={settings.frame_delay_ms}
+            options={SPEED_OPTIONS.map((o) => ({ value: o.ms, label: o.label }))}
+            onChange={(v) => setSettings({ ...settings, frame_delay_ms: v })}
+          />
 
           <label className="inline-flex items-center gap-1.5 rounded-md bg-bg-2 border border-edge px-2 py-1 cursor-pointer">
             <input
@@ -283,11 +270,3 @@ export default function Loop() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="inline-flex items-center gap-1 rounded-md bg-bg-2 border border-edge px-2 py-1">
-      <span>{label}</span>
-      {children}
-    </div>
-  );
-}

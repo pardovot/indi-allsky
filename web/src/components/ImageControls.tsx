@@ -1,3 +1,5 @@
+import Select from './Select';
+
 interface ImageControlsProps {
   refreshMs: number;
   onRefreshChange: (ms: number) => void;
@@ -20,20 +22,12 @@ export default function ImageControls({
 }: ImageControlsProps) {
   return (
     <div className="flex items-center gap-3 text-xs text-ink-dim flex-wrap">
-      <div className="inline-flex items-center gap-1 rounded-md bg-bg-2 border border-edge px-2 py-1">
-        <span>Refresh</span>
-        <select
-          value={refreshMs}
-          onChange={(e) => onRefreshChange(Number(e.target.value))}
-          className="bg-transparent text-ink focus:outline-none cursor-pointer"
-        >
-          {REFRESH_OPTIONS.map((o) => (
-            <option key={o.ms} value={o.ms}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Select
+        label="Refresh"
+        value={refreshMs}
+        options={REFRESH_OPTIONS.map((o) => ({ value: o.ms, label: o.label }))}
+        onChange={onRefreshChange}
+      />
       {lastUpdated && (
         <span>
           Updated{' '}
