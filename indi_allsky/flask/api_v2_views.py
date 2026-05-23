@@ -19,6 +19,7 @@ from flask_jwt_extended import get_jwt_identity
 
 from . import db
 from .models import IndiAllSkyDbUserTable
+from .models import IndiAllSkyDbCameraTable
 
 
 bp_api_v2 = Blueprint(
@@ -108,3 +109,31 @@ def me():
     if current_user is None:
         return jsonify({'error': 'user not found'}), 404
     return jsonify(_user_dto(current_user))
+
+
+@bp_api_v2.route('/cameras', methods=['GET'])
+@jwt_required()
+def cameras():
+    rows = IndiAllSkyDbCameraTable.query\
+        .filter(IndiAllSkyDbCameraTable.hidden == False)\
+        .order_by(IndiAllSkyDbCameraTable.id.asc())\
+        .all()
+    return jsonify([
+        {
+            'id'           : c.id,
+            'name'         : c.name,
+            'friendlyName' : c.friendlyName,
+            'width'        : c.width,
+            'height'       : c.height,
+        }
+        for c in rows
+    ])
+
+
+@bp_api_v2.route('/latest-image', methods=['GET'])
+@jwt_required()
+def latest_image():
+    # reuse existing JsonLatestImageView logic — it reads request.args for camera_id/limit_s/night
+    from .views import JsonLatestImageView
+    view = JsonLatestImageView()
+    return jsonify(view.get_objects())

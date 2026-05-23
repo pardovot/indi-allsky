@@ -28,3 +28,10 @@ ssl.crt
 ssl.key
 de421.bsp
 *.h5
+
+# new web UI (web/)
+web/node_modules/
+web/dist/
+web/.env
+web/.env.local
+indi_allsky/flask/static_v2/
