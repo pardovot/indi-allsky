@@ -9,6 +9,9 @@ import Timelapses from './pages/Timelapses';
 import Panorama from './pages/Panorama';
 import PanoramaLoop from './pages/PanoramaLoop';
 import MediaViewer from './pages/MediaViewer';
+import MiniGenerate from './pages/MiniGenerate';
+import Charts from './pages/Charts';
+import Lag from './pages/Lag';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -96,6 +99,9 @@ export default function App() {
           <Route path="/watch-mini"        element={<ProtectedRoute><MediaViewer type="mini-timelapse"  title="Mini Timelapse" /></ProtectedRoute>} />
           <Route path="/watch-startrail"   element={<ProtectedRoute><MediaViewer type="startrail-video" title="Star Trail Timelapse" /></ProtectedRoute>} />
           <Route path="/watch-panorama"    element={<ProtectedRoute><MediaViewer type="panorama-video"  title="Panorama Timelapse" /></ProtectedRoute>} />
+          <Route path="/generate-mini"     element={<ProtectedRoute><MiniGenerate /></ProtectedRoute>} />
+          <Route path="/charts"            element={<ProtectedRoute><Charts /></ProtectedRoute>} />
+          <Route path="/lag"               element={<ProtectedRoute><Lag /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

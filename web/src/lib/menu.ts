@@ -39,11 +39,11 @@ export const menu: MenuGroup[] = [
     label: 'Info',
     items: [
       { label: 'SQM',              to: '/indi-allsky/sqm' },
-      { label: 'Charts',           to: '/indi-allsky/charts' },
+      { label: 'Charts',           to: '/charts',                           native: true },
       { label: 'Sensor Panel',     to: '/indi-allsky/sensor_panel' },
       { label: 'Dark Library',     to: '/indi-allsky/darks',         authRequired: true },
       { label: 'ADU History',      to: '/indi-allsky/adu',           authRequired: true },
-      { label: 'Image Lag',        to: '/indi-allsky/lag',           authRequired: true },
+      { label: 'Image Lag',        to: '/lag',                              authRequired: true, native: true },
       { label: 'File Space Usage', to: '/indi-allsky/filespaceusage', authRequired: true },
       { label: 'Camera Info',      to: '/indi-allsky/camera',        authRequired: true },
     ],

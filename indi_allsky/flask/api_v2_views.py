@@ -349,6 +349,9 @@ def media():
         date_obj = getattr(row, 'dayDate', None) or getattr(row, 'createDate', None)
         date_str = date_obj.strftime('%B %d, %Y') if date_obj else ''
 
+    create_dt = getattr(row, 'createDate', None)
+    ts = int(create_dt.timestamp()) if create_dt is not None else None
+
     return jsonify({
         'kind': kind,
         'type': media_type,
@@ -356,7 +359,131 @@ def media():
         'url': url,
         'date': date_str,
         'timeofday': timeofday,
+        'timestamp': ts,
+        'camera_id': camera.id,
     })
+
+
+@bp_api_v2.route('/generate-mini', methods=['POST'])
+@jwt_required()
+def generate_mini():
+    from .views import AjaxMiniTimelapseGeneratorView
+    from flask_jwt_extended import current_user as jwt_user
+
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'failure-message': 'admin required'}), 403
+
+    # Reuse existing logic — but it checks Flask-Login current_user.is_admin.
+    # We've already authenticated via JWT, so build the task directly here.
+    from .models import IndiAllSkyDbImageTable, IndiAllSkyDbCameraTable
+    from .models import TaskQueueQueue, TaskQueueState, IndiAllSkyDbTaskQueueTable
+    from sqlalchemy.orm.exc import NoResultFound
+
+    data = request.get_json(silent=True) or {}
+    try:
+        image_id = int(data['IMAGE_ID'])
+        camera_id = int(data['CAMERA_ID'])
+        pre_seconds = int(data['PRE_SECONDS'])
+        post_seconds = int(data['POST_SECONDS'])
+        framerate = float(data['FRAMERATE'])
+        note = str(data.get('NOTE', '')).strip()
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'failure-message': 'missing/invalid fields'}), 400
+
+    if not note:
+        return jsonify({'failure-message': 'description required'}), 400
+
+    try:
+        IndiAllSkyDbImageTable.query\
+            .join(IndiAllSkyDbImageTable.camera)\
+            .filter(IndiAllSkyDbCameraTable.id == camera_id)\
+            .filter(IndiAllSkyDbImageTable.id == image_id).one()
+    except NoResultFound:
+        return jsonify({'failure-message': 'image not found'}), 404
+
+    jobdata = {
+        'action': 'generateMiniVideo',
+        'kwargs': {
+            'image_id': image_id,
+            'camera_id': camera_id,
+            'pre_seconds': pre_seconds,
+            'post_seconds': post_seconds,
+            'framerate': framerate,
+            'note': note,
+        },
+    }
+    task = IndiAllSkyDbTaskQueueTable(
+        queue=TaskQueueQueue.VIDEO,
+        state=TaskQueueState.MANUAL,
+        priority=100,
+        data=jobdata,
+    )
+    db.session.add(task)
+    db.session.commit()
+
+    # Reference AjaxMiniTimelapseGeneratorView so static-analysis sees the import
+    _ = AjaxMiniTimelapseGeneratorView
+
+    return jsonify({'success-message': 'Job submitted — check Mini-Timelapses in a few minutes'})
+
+
+@bp_api_v2.route('/charts', methods=['GET'])
+@jwt_required()
+def charts():
+    from .views import JsonChartView
+    view = JsonChartView()
+    return jsonify(view.get_objects())
+
+
+@bp_api_v2.route('/image-lag', methods=['GET'])
+@jwt_required()
+def image_lag():
+    """Lightweight wrapper around ImageLagView's data: list of recent images with lag info."""
+    from .base_views import BaseView
+    from .models import IndiAllSkyDbImageTable, IndiAllSkyDbCameraTable
+    from sqlalchemy import and_
+    from datetime import timedelta
+
+    camera_id = int(request.args.get('camera_id', 0))
+    if not camera_id:
+        return jsonify({'error': 'camera_id required'}), 400
+
+    history_seconds = int(request.args.get('limit_s', 3600))
+    history_seconds = min(history_seconds, 86400)
+
+    base = BaseView()
+    base.cameraSetup(camera_id=camera_id)
+
+    since = base.camera_now - timedelta(seconds=history_seconds)
+    rows = IndiAllSkyDbImageTable.query\
+        .join(IndiAllSkyDbImageTable.camera)\
+        .filter(and_(
+            IndiAllSkyDbCameraTable.id == camera_id,
+            IndiAllSkyDbImageTable.createDate > since,
+        ))\
+        .order_by(IndiAllSkyDbImageTable.createDate.desc())\
+        .limit(2000)\
+        .all()
+
+    image_list = []
+    prev_ts = None
+    for r in rows:
+        ts = r.createDate.timestamp()
+        # rows are desc, so lag = (this image's ts) - (next-older image's ts)
+        # we compute as we go by storing prev_ts (the more-recent one we saw)
+        if prev_ts is not None:
+            lag = prev_ts - ts
+        else:
+            lag = None
+        image_list.append({
+            'id': r.id,
+            'createDate': r.createDate.strftime('%Y-%m-%d %H:%M:%S'),
+            'exposure': r.exposure,
+            'lag_seconds': lag,
+        })
+        prev_ts = ts
+
+    return jsonify({'image_list': image_list, 'count': len(image_list)})
 
 
 @bp_api_v2.route('/status', methods=['GET'])

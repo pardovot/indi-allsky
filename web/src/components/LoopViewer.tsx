@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import Header from './Header';
@@ -72,6 +73,8 @@ function resolveImageUrl(url: string): string {
 }
 
 export default function LoopViewer({ endpoint, queryKey, settingsKey }: LoopViewerProps) {
+  const [params] = useSearchParams();
+  const timestamp = Number(params.get('timestamp') || 0);
   const [navOpen, setNavOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [cameraId, setCameraId] = useState<number | null>(() => {
@@ -106,11 +109,15 @@ export default function LoopViewer({ endpoint, queryKey, settingsKey }: LoopView
   }, [camerasQ.data, cameraId]);
 
   const loopQ = useQuery({
-    queryKey: [queryKey, cameraId, settings.history_seconds],
-    queryFn: () =>
-      api<LoopResp>(`${endpoint}?camera_id=${cameraId}&limit_s=${settings.history_seconds}`),
+    queryKey: [queryKey, cameraId, settings.history_seconds, timestamp],
+    queryFn: () => {
+      const ts = timestamp > 0 ? `&timestamp=${timestamp}` : '';
+      return api<LoopResp>(
+        `${endpoint}?camera_id=${cameraId}&limit_s=${settings.history_seconds}${ts}`,
+      );
+    },
     enabled: cameraId !== null,
-    refetchInterval: 60_000,
+    refetchInterval: timestamp > 0 ? false : 60_000,  // no auto-refresh when anchored to a timestamp
   });
 
   const images = useMemo(() => loopQ.data?.image_list ?? [], [loopQ.data]);

@@ -286,10 +286,10 @@ export default function Images() {
         {current && (
           <div className="flex items-center justify-center flex-wrap gap-2 text-xs">
             <ActionBadge color="info"      label="Image"          href={`/view-image?id=${current.id}`} />
-            <ActionBadge color="primary"   label="Loop"           href={`/indi-allsky/loop?timestamp=${ts}`} />
-            <ActionBadge color="success"   label="Mini Timelapse" href={`/indi-allsky/minigenerate?image_id=${current.id}`} />
-            <ActionBadge color="secondary" label="Chart"          href={`/indi-allsky/charts?timestamp=${ts}`} />
-            <ActionBadge color="warn"      label="Lag"            href={`/indi-allsky/lag?timestamp=${ts}`} />
+            <ActionBadge color="primary"   label="Loop"           href={`/loop?timestamp=${ts}`} />
+            <ActionBadge color="success"   label="Mini Timelapse" href={`/generate-mini?image_id=${current.id}`} />
+            <ActionBadge color="secondary" label="Chart"          href={`/charts?timestamp=${ts}`} />
+            <ActionBadge color="warn"      label="Lag"            href={`/lag`} />
             <ActionBadge color="dark"      label="VirtualSky"     href={`/indi-allsky/virtualsky?timestamp=${ts}`} />
             {current.fits_id && (
               <ActionBadge color="danger" label="FITS" href={resolveImageUrl(current.fits || '')} download />
