@@ -435,6 +435,126 @@ def charts():
     return jsonify(view.get_objects())
 
 
+@bp_api_v2.route('/realtime-keogram', methods=['GET'])
+@jwt_required()
+def realtime_keogram():
+    import math as _math
+    from .base_views import BaseView
+    camera_id = int(request.args.get('camera_id', 0))
+    if not camera_id:
+        return jsonify({'error': 'camera_id required'}), 400
+    base = BaseView()
+    base.cameraSetup(camera_id=camera_id)
+    ext = base.indi_allsky_config.get('IMAGE_FILE_TYPE', 'jpg')
+    url = 'images/ccd_{0}/realtime_keogram.{1}'.format(base.camera.uuid, ext)
+    refresh_ms = int(_math.ceil(base.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)) * 1000) + 1000
+    return jsonify({'url': url, 'refresh_ms': refresh_ms})
+
+
+@bp_api_v2.route('/longterm-keogram', methods=['GET'])
+@jwt_required()
+def longterm_keogram_cached():
+    import time as _time
+    from pathlib import Path as _Path
+    from .base_views import BaseView
+    camera_id = int(request.args.get('camera_id', 0))
+    if not camera_id:
+        return jsonify({'error': 'camera_id required'}), 400
+    base = BaseView()
+    base.cameraSetup(camera_id=camera_id)
+    p = _Path(app.config['INDI_ALLSKY_IMAGE_FOLDER']).joinpath(
+        'ccd_{0}'.format(base.camera.uuid), 'longterm_keogram.jpg',
+    )
+    if not p.is_file():
+        return jsonify({'url': None, 'age': None})
+    age_s = _time.time() - p.stat().st_mtime
+    days = int(age_s / 86400)
+    hours = int((age_s % 86400) / 3600)
+    minutes = int(((age_s % 86400) % 3600) / 60)
+    age_str = 'Generated {0} days, {1} hours, {2} minutes ago'.format(days, hours, minutes)
+    url = 'images/ccd_{0}/longterm_keogram.jpg'.format(base.camera.uuid)
+    return jsonify({'url': url, 'age': age_str})
+
+
+@bp_api_v2.route('/sensor-panel', methods=['GET'])
+@jwt_required()
+def sensor_panel():
+    from .views import JsonSensorPanelView
+    v = JsonSensorPanelView()
+    return jsonify(v.get_objects())
+
+
+@bp_api_v2.route('/support-info', methods=['GET'])
+@jwt_required()
+def support_info():
+    from .views import JsonSupportInfoView
+    v = JsonSupportInfoView()
+    return v.dispatch_request()
+
+
+@bp_api_v2.route('/log', methods=['POST'])
+@jwt_required()
+def log_view():
+    from .views import JsonLogView
+    v = JsonLogView()
+    return v.dispatch_request()
+
+
+@bp_api_v2.route('/file-space-usage', methods=['GET'])
+@jwt_required()
+def file_space_usage():
+    from .views import FileSpaceUsageView
+    v = FileSpaceUsageView()
+    ctx = v.get_context()
+    return jsonify({'days': ctx.get('days_fileSize_dict', {})})
+
+
+@bp_api_v2.route('/camera-info', methods=['GET'])
+@jwt_required()
+def camera_info():
+    from .views import CameraLensView
+    v = CameraLensView()
+    ctx = v.get_context()
+    camera = ctx['camera']
+    return jsonify({
+        'name': camera.name,
+        'friendlyName': camera.friendlyName,
+        'driver': camera.driver,
+        'owner': ctx.get('owner'),
+        'cfa': ctx.get('camera_cfa'),
+        'width': camera.width,
+        'height': camera.height,
+        'pixelSize': camera.pixelSize,
+        'bits': camera.bits,
+        'minGain': camera.minGain,
+        'maxGain': camera.maxGain,
+        'minExposure': camera.minExposure,
+        'maxExposure': camera.maxExposure,
+        'lensName': getattr(camera, 'lensName', None),
+        'lensFocalLength': getattr(camera, 'lensFocalLength', None),
+        'lensFocalRatio': getattr(camera, 'lensFocalRatio', None),
+        'lensAperture': ctx.get('lensAperture'),
+        'lensImageCircle': getattr(camera, 'lensImageCircle', None),
+        'latitude': camera.latitude,
+        'longitude': camera.longitude,
+        'elevation': camera.elevation,
+        'tz': camera.tz,
+        'camera_width_mm': ctx.get('camera_width_mm'),
+        'camera_height_mm': ctx.get('camera_height_mm'),
+        'camera_diagonal_mm': ctx.get('camera_diagonal_mm'),
+        'arcsec_pixel': ctx.get('arcsec_pixel'),
+        'arcsec_um': ctx.get('arcsec_um'),
+        'deg2_px': ctx.get('deg2_px'),
+        'image_circle_diameter': ctx.get('image_circle_diameter'),
+        'image_circle_diameter_mm': ctx.get('image_circle_diameter_mm'),
+        'deg_fov_width': ctx.get('deg_fov_width'),
+        'deg_fov_height': ctx.get('deg_fov_height'),
+        'deg_fov_diagonal': ctx.get('deg_fov_diagonal'),
+        'createDate': str(camera.createDate) if camera.createDate else None,
+        'connectDate': str(camera.connectDate) if camera.connectDate else None,
+    })
+
+
 @bp_api_v2.route('/virtualsky-config', methods=['GET'])
 @jwt_required()
 def virtualsky_config():

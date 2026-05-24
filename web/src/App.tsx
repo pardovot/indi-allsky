@@ -13,6 +13,14 @@ import MiniGenerate from './pages/MiniGenerate';
 import Charts from './pages/Charts';
 import Lag from './pages/Lag';
 import VirtualSky from './pages/VirtualSky';
+import RealtimeKeogram from './pages/RealtimeKeogram';
+import LongTermKeogram from './pages/LongTermKeogram';
+import SensorPanel from './pages/SensorPanel';
+import Sqm from './pages/Sqm';
+import FileSpaceUsage from './pages/FileSpaceUsage';
+import CameraInfo from './pages/CameraInfo';
+import SupportInfo from './pages/SupportInfo';
+import LogViewer from './pages/LogViewer';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -104,6 +112,14 @@ export default function App() {
           <Route path="/charts"            element={<ProtectedRoute><Charts /></ProtectedRoute>} />
           <Route path="/lag"               element={<ProtectedRoute><Lag /></ProtectedRoute>} />
           <Route path="/virtualsky"        element={<ProtectedRoute><VirtualSky /></ProtectedRoute>} />
+          <Route path="/realtime-keogram"  element={<ProtectedRoute><RealtimeKeogram /></ProtectedRoute>} />
+          <Route path="/longterm-keogram"  element={<ProtectedRoute><LongTermKeogram /></ProtectedRoute>} />
+          <Route path="/sensor-panel"      element={<ProtectedRoute><SensorPanel /></ProtectedRoute>} />
+          <Route path="/sqm"               element={<ProtectedRoute><Sqm /></ProtectedRoute>} />
+          <Route path="/file-space-usage"  element={<ProtectedRoute><FileSpaceUsage /></ProtectedRoute>} />
+          <Route path="/camera-info"       element={<ProtectedRoute><CameraInfo /></ProtectedRoute>} />
+          <Route path="/support-info"      element={<ProtectedRoute><SupportInfo /></ProtectedRoute>} />
+          <Route path="/log"               element={<ProtectedRoute><LogViewer /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
