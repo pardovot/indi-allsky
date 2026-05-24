@@ -42,10 +42,27 @@ function KeogramView({ cameraId }: { cameraId: number }) {
     enabled: !!q.data?.url,
   });
 
-  const url = q.data?.url ? `${resolveUrl(q.data.url)}?t=${tickQ.data ?? Date.now()}` : null;
+  const tick = tickQ.data ?? Date.now();
+  const url = q.data?.url ? `${resolveUrl(q.data.url)}?t=${tick}` : null;
+  const downloadUrl = q.data?.url ? resolveUrl(q.data.url) : null;
 
   return (
     <div className="w-full max-w-7xl flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3 self-stretch text-xs text-ink-dim">
+        <span className="font-mono">
+          Refreshes every {Math.round(refresh / 1000)}s
+        </span>
+        <div className="flex-1" />
+        {downloadUrl && (
+          <a
+            href={downloadUrl}
+            download
+            className="px-2.5 py-1 rounded-md bg-accent hover:bg-accent-hover text-bg-0 font-medium transition-colors"
+          >
+            Download
+          </a>
+        )}
+      </div>
       {url ? (
         <img
           src={url}
@@ -57,9 +74,6 @@ function KeogramView({ cameraId }: { cameraId: number }) {
           {q.isLoading ? 'Loading…' : 'No keogram yet'}
         </div>
       )}
-      <div className="text-[11px] text-ink-dim font-mono">
-        Refreshes every {Math.round(refresh / 1000)}s
-      </div>
     </div>
   );
 }

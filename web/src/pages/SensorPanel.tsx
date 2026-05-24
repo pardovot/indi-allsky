@@ -1,12 +1,21 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import PageShell from '@/components/PageShell';
 
+interface SensorRow {
+  slot: string;
+  index: number;
+  label: string;
+  value: number | string;
+}
+
 interface SensorResp {
   last_update: string | null;
   last_update_age_s: number | null;
-  sensor_user: number[];
-  sensor_temp: number[];
+  user_rows: SensorRow[];
+  temp_rows: SensorRow[];
+  show_all: boolean;
 }
 
 export default function SensorPanel() {
@@ -15,18 +24,20 @@ export default function SensorPanel() {
       {({ cameraId }) => (
         <main className="flex-1 flex flex-col px-4 py-4 gap-3">
           <h1 className="text-ink-bright text-lg font-semibold tracking-tight">Sensor Panel</h1>
-          {cameraId !== null && <SensorTables cameraId={cameraId} />}
+          {cameraId !== null && <SensorContent cameraId={cameraId} />}
         </main>
       )}
     </PageShell>
   );
 }
 
-function SensorTables({ cameraId }: { cameraId: number }) {
+function SensorContent({ cameraId }: { cameraId: number }) {
+  const [showAll, setShowAll] = useState(false);
   const q = useQuery({
-    queryKey: ['sensor-panel', cameraId],
-    queryFn: () => api<SensorResp>(`/sensor-panel?camera_id=${cameraId}`),
-    refetchInterval: 30_000,
+    queryKey: ['sensor-panel', cameraId, showAll],
+    queryFn: () =>
+      api<SensorResp>(`/sensor-panel?camera_id=${cameraId}${showAll ? '&all=1' : ''}`),
+    refetchInterval: 5_000,
   });
 
   if (q.isLoading) return <div className="text-ink-dim text-sm">Loading…</div>;
@@ -34,41 +45,65 @@ function SensorTables({ cameraId }: { cameraId: number }) {
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-ink-dim">
-        {q.data.last_update
-          ? <>Last update: {q.data.last_update} ({q.data.last_update_age_s}s ago)</>
-          : 'No recent image'}
+      <div className="flex items-center justify-between flex-wrap gap-3 text-xs">
+        <div className="text-ink-dim">
+          {q.data.last_update
+            ? <>Last update: <span className="font-mono text-ink">{q.data.last_update}</span>
+                <span className="ml-2 text-ink-dim">({q.data.last_update_age_s ?? '–'}s ago)</span>
+              </>
+            : <span className="text-warn">No recent image metadata available</span>}
+        </div>
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="px-2.5 py-1 rounded-md bg-bg-2 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink transition-colors"
+        >
+          {showAll ? 'Show used only' : 'Show all slots'}
+        </button>
       </div>
 
-      <div className="grid gap-3 grid-cols-1 lg:grid-cols-2">
-        <SensorGrid title="User Sensors (sensor_user)" values={q.data.sensor_user} />
-        <SensorGrid title="Temperature Sensors (sensor_temp)" values={q.data.sensor_temp} />
+      <div className="grid gap-3 grid-cols-1 xl:grid-cols-2">
+        <SensorTable title="User Sensor Slots" rows={q.data.user_rows} />
+        <SensorTable title="Temperature Sensors" rows={q.data.temp_rows} />
       </div>
     </div>
   );
 }
 
-function SensorGrid({ title, values }: { title: string; values: number[] }) {
+function formatValue(v: number | string): string {
+  if (typeof v === 'number') return v.toFixed(6);
+  if (v === '' || v == null) return '—';
+  return String(v);
+}
+
+function SensorTable({ title, rows }: { title: string; rows: SensorRow[] }) {
   return (
     <div className="bg-bg-1 border border-edge rounded-lg overflow-hidden">
-      <div className="px-3 py-2 text-ink-bright text-sm font-medium border-b border-edge bg-bg-2">
+      <div className="px-3 py-2 bg-bg-2 border-b border-edge text-ink-bright text-sm font-medium">
         {title}
       </div>
-      <div className="grid grid-cols-4 sm:grid-cols-6 gap-px bg-edge">
-        {values.map((v, i) => (
-          <div key={i} className="bg-bg-1 p-2 text-center">
-            <div className="text-[10px] text-ink-dim uppercase tracking-wider">{i}</div>
-            <div
-              className={[
-                'font-mono text-sm',
-                v === 0 ? 'text-ink-dim/50' : 'text-ink-bright',
-              ].join(' ')}
-            >
-              {typeof v === 'number' ? v.toFixed(2) : v}
-            </div>
-          </div>
-        ))}
-      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-bg-2 text-ink-dim text-[10px] uppercase tracking-wider">
+          <tr>
+            <th className="text-left px-3 py-1.5 w-32">Slot</th>
+            <th className="text-left px-3 py-1.5">Label</th>
+            <th className="text-right px-3 py-1.5 w-40">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr><td colSpan={3} className="px-3 py-4 text-center text-ink-dim">No active sensors</td></tr>
+          )}
+          {rows.map((r) => (
+            <tr key={r.slot} className="border-t border-edge hover:bg-bg-2 transition-colors">
+              <td className="px-3 py-1 font-mono text-ink-dim text-xs">{r.slot}</td>
+              <td className="px-3 py-1 text-ink">{r.label}</td>
+              <td className="px-3 py-1 text-right font-mono text-warn">
+                {formatValue(r.value)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

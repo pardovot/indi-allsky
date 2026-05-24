@@ -451,6 +451,15 @@ def realtime_keogram():
     return jsonify({'url': url, 'refresh_ms': refresh_ms})
 
 
+@bp_api_v2.route('/longterm-keogram-generate', methods=['POST'])
+@jwt_required()
+def longterm_keogram_generate():
+    """Wraps the JsonLongTermKeogramView — kicks off keogram generation."""
+    from .views import JsonLongTermKeogramView
+    v = JsonLongTermKeogramView()
+    return v.dispatch_request()
+
+
 @bp_api_v2.route('/longterm-keogram', methods=['GET'])
 @jwt_required()
 def longterm_keogram_cached():
@@ -476,12 +485,33 @@ def longterm_keogram_cached():
     return jsonify({'url': url, 'age': age_str})
 
 
+def _set_session_camera(camera_id):
+    """TemplateView reads session['camera_id'] in __init__. Set it so the view
+    picks up the right camera when instantiated from a JWT-authed request."""
+    from flask import session as _session
+    _session['camera_id'] = int(camera_id)
+
+
 @bp_api_v2.route('/sensor-panel', methods=['GET'])
 @jwt_required()
 def sensor_panel():
-    from .views import JsonSensorPanelView
-    v = JsonSensorPanelView()
-    return jsonify(v.get_objects())
+    from .views import SensorPanelView
+
+    camera_id = int(request.args.get('camera_id', 0))
+    if camera_id:
+        _set_session_camera(camera_id)
+
+    v = SensorPanelView(template_name='unused')
+    ctx = v.get_context()
+
+    last_update = ctx.get('last_update')
+    return jsonify({
+        'last_update': str(last_update) if last_update else None,
+        'last_update_age_s': ctx.get('last_update_age_s'),
+        'user_rows': ctx.get('user_rows', []),
+        'temp_rows': ctx.get('temp_rows', []),
+        'show_all': ctx.get('show_all', False),
+    })
 
 
 @bp_api_v2.route('/support-info', methods=['GET'])
@@ -504,7 +534,10 @@ def log_view():
 @jwt_required()
 def file_space_usage():
     from .views import FileSpaceUsageView
-    v = FileSpaceUsageView()
+    camera_id = int(request.args.get('camera_id', 0))
+    if camera_id:
+        _set_session_camera(camera_id)
+    v = FileSpaceUsageView(template_name='unused')
     ctx = v.get_context()
     return jsonify({'days': ctx.get('days_fileSize_dict', {})})
 
@@ -513,7 +546,10 @@ def file_space_usage():
 @jwt_required()
 def camera_info():
     from .views import CameraLensView
-    v = CameraLensView()
+    camera_id = int(request.args.get('camera_id', 0))
+    if camera_id:
+        _set_session_camera(camera_id)
+    v = CameraLensView(template_name='unused')
     ctx = v.get_context()
     camera = ctx['camera']
     return jsonify({
