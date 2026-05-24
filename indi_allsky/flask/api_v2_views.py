@@ -280,16 +280,17 @@ def panorama_loop():
 
 
 _MEDIA_TYPES = {
-    # kind, model attribute on .views module, has_dayDate (vs createDate for label)
-    'image':            ('image', 'IndiAllSkyDbImageTable'),
-    'panorama':         ('image', 'IndiAllSkyDbPanoramaImageTable'),
-    'keogram':          ('image', 'IndiAllSkyDbKeogramTable'),
-    'startrail':        ('image', 'IndiAllSkyDbStarTrailsTable'),
-    'raw':              ('image', 'IndiAllSkyDbRawImageTable'),
-    'timelapse':        ('video', 'IndiAllSkyDbVideoTable'),
-    'mini-timelapse':   ('video', 'IndiAllSkyDbMiniVideoTable'),
-    'startrail-video':  ('video', 'IndiAllSkyDbStarTrailsVideoTable'),
-    'panorama-video':   ('video', 'IndiAllSkyDbPanoramaVideoTable'),
+    # type → (kind, model, date_granularity)
+    # date_granularity: 'datetime' = point-in-time image (show time), 'date' = day-span (no time)
+    'image':            ('image', 'IndiAllSkyDbImageTable',          'datetime'),
+    'panorama':         ('image', 'IndiAllSkyDbPanoramaImageTable',  'datetime'),
+    'raw':              ('image', 'IndiAllSkyDbRawImageTable',       'datetime'),
+    'keogram':          ('image', 'IndiAllSkyDbKeogramTable',        'date'),
+    'startrail':        ('image', 'IndiAllSkyDbStarTrailsTable',     'date'),
+    'timelapse':        ('video', 'IndiAllSkyDbVideoTable',          'date'),
+    'mini-timelapse':   ('video', 'IndiAllSkyDbMiniVideoTable',      'date'),
+    'startrail-video':  ('video', 'IndiAllSkyDbStarTrailsVideoTable','date'),
+    'panorama-video':   ('video', 'IndiAllSkyDbPanoramaVideoTable',  'date'),
 }
 
 
@@ -308,7 +309,7 @@ def media():
     if media_id <= 0:
         return jsonify({'error': 'id required'}), 400
 
-    kind, model_name = _MEDIA_TYPES[media_type]
+    kind, model_name, granularity = _MEDIA_TYPES[media_type]
     Model = getattr(_models, model_name)
 
     try:
@@ -341,14 +342,12 @@ def media():
     night = getattr(row, 'night', None)
     timeofday = 'Night' if night else ('Day' if night is False else '')
 
-    date_obj = getattr(row, 'dayDate', None) or getattr(row, 'createDate', None)
-    if date_obj is not None:
-        if kind == 'image':
-            date_str = date_obj.strftime('%B %d, %Y - %H:%M:%S')
-        else:
-            date_str = date_obj.strftime('%B %d, %Y')
+    if granularity == 'datetime':
+        date_obj = getattr(row, 'createDate', None) or getattr(row, 'dayDate', None)
+        date_str = date_obj.strftime('%B %d, %Y - %H:%M:%S') if date_obj else ''
     else:
-        date_str = ''
+        date_obj = getattr(row, 'dayDate', None) or getattr(row, 'createDate', None)
+        date_str = date_obj.strftime('%B %d, %Y') if date_obj else ''
 
     return jsonify({
         'kind': kind,
