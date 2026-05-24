@@ -31,8 +31,16 @@ export default function SensorPanel() {
   );
 }
 
+function isZero(v: number | string): boolean {
+  if (typeof v === 'number') return v === 0;
+  if (v === '' || v == null) return true;
+  return false;
+}
+
 function SensorContent({ cameraId }: { cameraId: number }) {
   const [showAll, setShowAll] = useState(false);
+  const [hideZeros, setHideZeros] = useState(true);
+
   const q = useQuery({
     queryKey: ['sensor-panel', cameraId, showAll],
     queryFn: () =>
@@ -42,6 +50,13 @@ function SensorContent({ cameraId }: { cameraId: number }) {
 
   if (q.isLoading) return <div className="text-ink-dim text-sm">Loading…</div>;
   if (!q.data) return <div className="text-ink-dim text-sm">No data</div>;
+
+  const userRows = hideZeros ? q.data.user_rows.filter((r) => !isZero(r.value)) : q.data.user_rows;
+  const tempRows = hideZeros ? q.data.temp_rows.filter((r) => !isZero(r.value)) : q.data.temp_rows;
+
+  const hiddenCount =
+    (q.data.user_rows.length + q.data.temp_rows.length) -
+    (userRows.length + tempRows.length);
 
   return (
     <div className="space-y-3">
@@ -53,17 +68,33 @@ function SensorContent({ cameraId }: { cameraId: number }) {
               </>
             : <span className="text-warn">No recent image metadata available</span>}
         </div>
-        <button
-          onClick={() => setShowAll((v) => !v)}
-          className="px-2.5 py-1 rounded-md bg-bg-2 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink transition-colors"
-        >
-          {showAll ? 'Show used only' : 'Show all slots'}
-        </button>
+        <div className="flex items-center gap-2">
+          {hideZeros && hiddenCount > 0 && (
+            <span className="text-ink-dim/70">{hiddenCount} hidden</span>
+          )}
+          <button
+            onClick={() => setHideZeros((v) => !v)}
+            className={[
+              'px-2.5 py-1 rounded-md border transition-colors',
+              hideZeros
+                ? 'bg-accent/20 border-accent/40 text-accent hover:bg-accent/30'
+                : 'bg-bg-2 border-edge text-ink-dim hover:text-ink hover:bg-bg-3',
+            ].join(' ')}
+          >
+            {hideZeros ? 'Hide zeros: on' : 'Hide zeros: off'}
+          </button>
+          <button
+            onClick={() => setShowAll((v) => !v)}
+            className="px-2.5 py-1 rounded-md bg-bg-2 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink transition-colors"
+          >
+            {showAll ? 'Show used only' : 'Show all slots'}
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-3 grid-cols-1 xl:grid-cols-2">
-        <SensorTable title="User Sensor Slots" rows={q.data.user_rows} />
-        <SensorTable title="Temperature Sensors" rows={q.data.temp_rows} />
+        <SensorTable title="User Sensor Slots" rows={userRows} />
+        <SensorTable title="Temperature Sensors" rows={tempRows} />
       </div>
     </div>
   );
