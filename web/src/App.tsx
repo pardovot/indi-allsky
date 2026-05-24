@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Home from './pages/Home';
 import Loop from './pages/Loop';
 import Gallery from './pages/Gallery';
+import Images from './pages/Images';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -39,6 +40,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Gallery />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/images"
+            element={
+              <ProtectedRoute>
+                <Images />
               </ProtectedRoute>
             }
           />

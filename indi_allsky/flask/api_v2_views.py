@@ -157,6 +157,15 @@ def gallery():
     return view.dispatch_request()
 
 
+@bp_api_v2.route('/imageviewer', methods=['POST'])
+@jwt_required()
+def imageviewer():
+    # reuse existing AjaxImageViewerView — same body shape as gallery
+    from .views import AjaxImageViewerView
+    view = AjaxImageViewerView()
+    return view.dispatch_request()
+
+
 @bp_api_v2.route('/status', methods=['GET'])
 @jwt_required()
 def status():
