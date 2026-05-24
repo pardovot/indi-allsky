@@ -311,19 +311,26 @@ def media():
     kind, model_name = _MEDIA_TYPES[media_type]
     Model = getattr(_models, model_name)
 
-    # Borrow BaseView to resolve s3_prefix + local-asset rules from config/network.
+    try:
+        row = Model.query.filter(Model.id == media_id).one()
+    except NoResultFound:
+        return jsonify({'error': 'not found'}), 404
+
+    # Need camera_id to resolve s3_prefix + local-asset rules. The row's FK is
+    # named differently across tables, but the relationship is always `.camera`.
+    camera = getattr(row, 'camera', None)
+    if camera is None:
+        return jsonify({'error': 'no camera for media'}), 500
+
     base = BaseView()
+    base.cameraSetup(camera_id=camera.id)
+
     local = True
     if base.web_nonlocal_images:
         if base.web_local_images_admin and base.verify_admin_network():
             pass
         else:
             local = False
-
-    try:
-        row = Model.query.filter(Model.id == media_id).one()
-    except NoResultFound:
-        return jsonify({'error': 'not found'}), 404
 
     try:
         url = str(row.getUrl(s3_prefix=base.s3_prefix, local=local))
