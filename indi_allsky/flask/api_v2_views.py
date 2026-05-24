@@ -166,6 +166,38 @@ def imageviewer():
     return view.dispatch_request()
 
 
+@bp_api_v2.route('/videoviewer', methods=['POST'])
+@jwt_required()
+def videoviewer():
+    from .views import AjaxVideoViewerView
+    view = AjaxVideoViewerView()
+    return view.dispatch_request()
+
+
+@bp_api_v2.route('/mini-videoviewer', methods=['POST'])
+@jwt_required()
+def mini_videoviewer():
+    from .views import AjaxMiniVideoViewerView
+    view = AjaxMiniVideoViewerView()
+    return view.dispatch_request()
+
+
+@bp_api_v2.route('/latest-panorama', methods=['GET'])
+@jwt_required()
+def latest_panorama():
+    from .views import JsonLatestPanoramaView
+    view = JsonLatestPanoramaView()
+    return jsonify(view.get_objects())
+
+
+@bp_api_v2.route('/panorama-loop', methods=['GET'])
+@jwt_required()
+def panorama_loop():
+    from .views import JsonPanoramaLoopView
+    view = JsonPanoramaLoopView()
+    return jsonify(view.get_objects())
+
+
 @bp_api_v2.route('/status', methods=['GET'])
 @jwt_required()
 def status():

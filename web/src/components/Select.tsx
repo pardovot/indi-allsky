@@ -31,6 +31,9 @@ export default function Select<T extends string | number>({
   const [menuWidth, setMenuWidth] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const scrollTopRef = useRef(0);
+  const hasOpenedRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -51,8 +54,22 @@ export default function Select<T extends string | number>({
   }, [open]);
 
   useLayoutEffect(() => {
-    if (open && btnRef.current) {
-      setMenuWidth(btnRef.current.offsetWidth);
+    if (!open) return;
+    if (btnRef.current) setMenuWidth(btnRef.current.offsetWidth);
+
+    const list = listRef.current;
+    if (!list) return;
+
+    if (hasOpenedRef.current) {
+      // Subsequent opens: restore scroll position from last close.
+      list.scrollTop = scrollTopRef.current;
+    } else {
+      // First open ever: scroll the selected option into view.
+      const selectedEl = list.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (selectedEl) {
+        selectedEl.scrollIntoView({ block: 'nearest' });
+      }
+      hasOpenedRef.current = true;
     }
   }, [open]);
 
@@ -93,8 +110,12 @@ export default function Select<T extends string | number>({
 
       {open && (
         <ul
+          ref={listRef}
           role="listbox"
           style={menuWidth ? { minWidth: menuWidth } : undefined}
+          onScroll={(e) => {
+            scrollTopRef.current = e.currentTarget.scrollTop;
+          }}
           className="absolute left-0 mt-1 bg-bg-1 border border-edge rounded-md shadow-2xl z-50 py-1 max-h-72 overflow-y-auto"
         >
           {options.map((o) => {

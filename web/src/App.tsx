@@ -5,6 +5,9 @@ import Home from './pages/Home';
 import Loop from './pages/Loop';
 import Gallery from './pages/Gallery';
 import Images from './pages/Images';
+import Timelapses from './pages/Timelapses';
+import Panorama from './pages/Panorama';
+import PanoramaLoop from './pages/PanoramaLoop';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -48,6 +51,38 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Images />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/timelapses"
+            element={
+              <ProtectedRoute>
+                <Timelapses endpoint="/videoviewer" queryKey="videoviewer" title="Timelapses" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/mini-timelapses"
+            element={
+              <ProtectedRoute>
+                <Timelapses endpoint="/mini-videoviewer" queryKey="mini-videoviewer" title="Mini-Timelapses" mini />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/panorama"
+            element={
+              <ProtectedRoute>
+                <Panorama />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/panorama-loop"
+            element={
+              <ProtectedRoute>
+                <PanoramaLoop />
               </ProtectedRoute>
             }
           />
