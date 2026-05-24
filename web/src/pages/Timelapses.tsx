@@ -110,13 +110,19 @@ export default function Timelapses({ endpoint, queryKey, title, mini = false }: 
             ...body,
           }),
         });
+        // Backend returns [['', 'None']] when no data exists — treat as empty.
+        const realYears = (data.YEAR_SELECT ?? []).filter((t) => t[0] !== '' && t[0] != null);
+        const realMonths = (data.MONTH_SELECT ?? []).filter((t) => t[0] !== '' && t[0] != null);
+
         if (data.YEAR_SELECT) {
-          setYearOpts(data.YEAR_SELECT);
-          if (data.YEAR_SELECT.length > 0) setYear(Number(data.YEAR_SELECT[0][0]));
+          setYearOpts(realYears);
+          if (realYears.length > 0) setYear(Number(realYears[0][0]));
+          else setYear(null);
         }
         if (data.MONTH_SELECT) {
-          setMonthOpts(data.MONTH_SELECT);
-          if (data.MONTH_SELECT.length > 0) setMonth(Number(data.MONTH_SELECT[0][0]));
+          setMonthOpts(realMonths);
+          if (realMonths.length > 0) setMonth(Number(realMonths[0][0]));
+          else setMonth(null);
         }
         if (data.video_list) setVideos(data.video_list);
       } finally {
@@ -190,8 +196,18 @@ export default function Timelapses({ endpoint, queryKey, title, mini = false }: 
         </div>
 
         {videos.length === 0 && !loading ? (
-          <div className="flex-1 flex items-center justify-center text-ink-dim text-sm">
-            No videos for this period
+          <div className="flex-1 flex flex-col items-center justify-center text-ink-dim text-sm gap-2 px-4 text-center">
+            {mini ? (
+              <>
+                <div>No mini-timelapses yet</div>
+                <div className="text-ink-dim/70 text-xs max-w-md">
+                  Generate one from <span className="text-ink">Media → Images</span> by clicking
+                  the <span className="text-ink">Mini Timelapse</span> button under an image.
+                </div>
+              </>
+            ) : (
+              <div>No videos for this period</div>
+            )}
           </div>
         ) : (
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
