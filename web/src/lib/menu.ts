@@ -51,7 +51,7 @@ export const menu: MenuGroup[] = [
   {
     label: 'Tools',
     items: [
-      { label: 'VirtualSky',         to: '/indi-allsky/virtualsky' },
+      { label: 'VirtualSky',         to: '/virtualsky',                       native: true },
       { label: 'Camera Simulator',   to: '/indi-allsky/camerasimulator' },
       { label: 'Astropanel',         to: '/indi-allsky/astropanel' },
       { label: 'Generate',           to: '/indi-allsky/generate',           authRequired: true },

@@ -8,13 +8,11 @@ import {
   LinearScale,
   PointElement,
   LineElement,
-  TimeScale,
   Title,
   Tooltip,
   Legend,
   ChartOptions,
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
 import { api } from '@/lib/api';
 import Header from '@/components/Header';
 import NavDrawer from '@/components/NavDrawer';
@@ -22,11 +20,12 @@ import StatusPanel from '@/components/StatusPanel';
 import Select from '@/components/Select';
 
 ChartJS.register(
-  CategoryScale, LinearScale, PointElement, LineElement, TimeScale,
+  CategoryScale, LinearScale, PointElement, LineElement,
   Title, Tooltip, Legend,
 );
 
-interface DataPoint { x: number; y: number; }
+// Backend returns x as time-of-day string ('HH:MM:SS').
+interface DataPoint { x: string; y: number; }
 
 interface ChartData {
   jsqm?: DataPoint[];
@@ -97,16 +96,19 @@ const baseOptions: ChartOptions<'line'> = {
   responsive: true,
   maintainAspectRatio: false,
   animation: false,
-  parsing: false as unknown as ChartOptions<'line'>['parsing'],
   plugins: {
     legend: { labels: { color: '#888890' } },
     tooltip: { mode: 'index', intersect: false },
   },
   scales: {
     x: {
-      type: 'time',
-      time: { unit: 'minute' },
-      ticks: { color: '#888890' },
+      type: 'category',
+      ticks: {
+        color: '#888890',
+        autoSkip: true,
+        maxRotation: 0,
+        maxTicksLimit: 12,
+      },
       grid: { color: 'rgba(255,255,255,0.05)' },
     },
     y: {

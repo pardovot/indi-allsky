@@ -12,6 +12,7 @@ import MediaViewer from './pages/MediaViewer';
 import MiniGenerate from './pages/MiniGenerate';
 import Charts from './pages/Charts';
 import Lag from './pages/Lag';
+import VirtualSky from './pages/VirtualSky';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -102,6 +103,7 @@ export default function App() {
           <Route path="/generate-mini"     element={<ProtectedRoute><MiniGenerate /></ProtectedRoute>} />
           <Route path="/charts"            element={<ProtectedRoute><Charts /></ProtectedRoute>} />
           <Route path="/lag"               element={<ProtectedRoute><Lag /></ProtectedRoute>} />
+          <Route path="/virtualsky"        element={<ProtectedRoute><VirtualSky /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

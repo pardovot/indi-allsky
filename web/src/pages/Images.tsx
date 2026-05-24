@@ -290,7 +290,7 @@ export default function Images() {
             <ActionBadge color="success"   label="Mini Timelapse" href={`/generate-mini?image_id=${current.id}`} />
             <ActionBadge color="secondary" label="Chart"          href={`/charts?timestamp=${ts}`} />
             <ActionBadge color="warn"      label="Lag"            href={`/lag`} />
-            <ActionBadge color="dark"      label="VirtualSky"     href={`/indi-allsky/virtualsky?timestamp=${ts}`} />
+            <ActionBadge color="dark"      label="VirtualSky"     href={`/virtualsky?timestamp=${ts}`} />
             {current.fits_id && (
               <ActionBadge color="danger" label="FITS" href={resolveImageUrl(current.fits || '')} download />
             )}

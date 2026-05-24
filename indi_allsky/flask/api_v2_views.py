@@ -435,6 +435,50 @@ def charts():
     return jsonify(view.get_objects())
 
 
+@bp_api_v2.route('/virtualsky-config', methods=['GET'])
+@jwt_required()
+def virtualsky_config():
+    """Camera location + per-camera VirtualSky defaults used by the overlay."""
+    from datetime import datetime as _dt
+    from .base_views import BaseView
+
+    camera_id = int(request.args.get('camera_id', 0))
+    if not camera_id:
+        return jsonify({'error': 'camera_id required'}), 400
+
+    base = BaseView()
+    base.cameraSetup(camera_id=camera_id)
+    cam = base.camera
+    data = dict(cam.data) if cam.data else {}
+
+    privacy = base.indi_allsky_config.get('PRIVACY_MODE')
+    latitude  = float(round(cam.latitude))  if privacy else cam.latitude
+    longitude = float(round(cam.longitude)) if privacy else cam.longitude
+
+    time_offset = cam.utc_offset - _dt.now().astimezone().utcoffset().total_seconds()
+
+    return jsonify({
+        'camera_latitude':  latitude,
+        'camera_longitude': longitude,
+        'time_offset':      time_offset,
+        'defaults': {
+            'AZIMUTH_ANGLE':          cam.az,
+            'IMAGE_CIRCLE_DIAMETER':  data.get('vs_image_circle_diameter', 3500),
+            'LATITUDE_OFFSET':        data.get('vs_latitude_offset', 0.0),
+            'LONGITUDE_OFFSET':       data.get('vs_longitude_offset', 0.0),
+            'OFFSET_X':               data.get('vs_offset_x', 0.0),
+            'OFFSET_Y':               data.get('vs_offset_y', 0.0),
+            'MAGNITUDE':              data.get('vs_magnitude', 6.0),
+            'CONSTELLATIONS':         data.get('vs_constellations', True),
+            'CONSTELLATIONLABELS':    data.get('vs_constellationlabels', False),
+            'SHOWSTARS':              data.get('vs_showstars', True),
+            'SHOWSTARLABELS':         data.get('vs_showstarlabels', True),
+            'SHOWPLANETS':            data.get('vs_showplanets', True),
+            'SHOWPLANETLABELS':       data.get('vs_showplanetlabels', True),
+        },
+    })
+
+
 @bp_api_v2.route('/image-lag', methods=['GET'])
 @jwt_required()
 def image_lag():
