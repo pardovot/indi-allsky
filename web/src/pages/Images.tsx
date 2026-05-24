@@ -285,7 +285,7 @@ export default function Images() {
 
         {current && (
           <div className="flex items-center justify-center flex-wrap gap-2 text-xs">
-            <ActionBadge color="info"      label="Image"          href={`/indi-allsky/view_image?id=${current.id}`} />
+            <ActionBadge color="info"      label="Image"          href={`/view-image?id=${current.id}`} />
             <ActionBadge color="primary"   label="Loop"           href={`/indi-allsky/loop?timestamp=${ts}`} />
             <ActionBadge color="success"   label="Mini Timelapse" href={`/indi-allsky/minigenerate?image_id=${current.id}`} />
             <ActionBadge color="secondary" label="Chart"          href={`/indi-allsky/charts?timestamp=${ts}`} />
@@ -298,10 +298,10 @@ export default function Images() {
               <ActionBadge color="success" label="FITS Processing" href={`/indi-allsky/processing?type=light&id=${current.fits_id}`} />
             )}
             {current.raw_id && (
-              <ActionBadge color="warn" label="RAW" href={`/indi-allsky/view_raw?id=${current.raw_id}`} />
+              <ActionBadge color="warn" label="RAW" href={`/view-raw?id=${current.raw_id}`} />
             )}
             {current.panorama_id && (
-              <ActionBadge color="success" label="Panorama" href={`/indi-allsky/view_panorama?id=${current.panorama_id}`} />
+              <ActionBadge color="success" label="Panorama" href={`/view-panorama?id=${current.panorama_id}`} />
             )}
           </div>
         )}

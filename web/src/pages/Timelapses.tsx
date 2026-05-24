@@ -256,16 +256,16 @@ function VideoCard({ item, mini }: { item: VideoItem; mini: boolean }) {
         {!mini && (
           <div className="flex flex-wrap gap-1">
             {item.keogram_id != null && (
-              <Badge color="warn" href={`/indi-allsky/view_keogram?id=${item.keogram_id}`} label="Keogram" />
+              <Badge color="warn" href={`/view-keogram?id=${item.keogram_id}`} label="Keogram" />
             )}
             {item.night && item.startrail_id != null && item.startrail && item.startrail !== 'None' && (
-              <Badge color="primary" href={`/indi-allsky/view_startrail?id=${item.startrail_id}`} label="Star Trail" />
+              <Badge color="primary" href={`/view-startrail?id=${item.startrail_id}`} label="Star Trail" />
             )}
             {item.night && item.startrail_timelapse_id != null && item.startrail_timelapse && item.startrail_timelapse !== 'None' && (
-              <Badge color="primary" href={`/indi-allsky/watch_startrail?id=${item.startrail_timelapse_id}`} label="Star Trail Timelapse" />
+              <Badge color="primary" href={`/watch-startrail?id=${item.startrail_timelapse_id}`} label="Star Trail Timelapse" />
             )}
             {item.panorama_timelapse_id != null && item.panorama_timelapse && item.panorama_timelapse !== 'None' && (
-              <Badge color="success" href={`/indi-allsky/watch_panorama?id=${item.panorama_timelapse_id}`} label="Panorama" />
+              <Badge color="success" href={`/watch-panorama?id=${item.panorama_timelapse_id}`} label="Panorama" />
             )}
           </div>
         )}

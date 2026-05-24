@@ -279,6 +279,80 @@ def panorama_loop():
     return jsonify(view.get_objects())
 
 
+_MEDIA_TYPES = {
+    # kind, model attribute on .views module, has_dayDate (vs createDate for label)
+    'image':            ('image', 'IndiAllSkyDbImageTable'),
+    'panorama':         ('image', 'IndiAllSkyDbPanoramaImageTable'),
+    'keogram':          ('image', 'IndiAllSkyDbKeogramTable'),
+    'startrail':        ('image', 'IndiAllSkyDbStarTrailsTable'),
+    'raw':              ('image', 'IndiAllSkyDbRawImageTable'),
+    'timelapse':        ('video', 'IndiAllSkyDbVideoTable'),
+    'mini-timelapse':   ('video', 'IndiAllSkyDbMiniVideoTable'),
+    'startrail-video':  ('video', 'IndiAllSkyDbStarTrailsVideoTable'),
+    'panorama-video':   ('video', 'IndiAllSkyDbPanoramaVideoTable'),
+}
+
+
+@bp_api_v2.route('/media', methods=['GET'])
+@jwt_required()
+def media():
+    from sqlalchemy.orm.exc import NoResultFound
+    from . import models as _models
+    from .base_views import BaseView
+
+    media_type = request.args.get('type', '')
+    media_id = int(request.args.get('id', 0))
+
+    if media_type not in _MEDIA_TYPES:
+        return jsonify({'error': 'unknown media type'}), 400
+    if media_id <= 0:
+        return jsonify({'error': 'id required'}), 400
+
+    kind, model_name = _MEDIA_TYPES[media_type]
+    Model = getattr(_models, model_name)
+
+    # Borrow BaseView to resolve s3_prefix + local-asset rules from config/network.
+    base = BaseView()
+    local = True
+    if base.web_nonlocal_images:
+        if base.web_local_images_admin and base.verify_admin_network():
+            pass
+        else:
+            local = False
+
+    try:
+        row = Model.query.filter(Model.id == media_id).one()
+    except NoResultFound:
+        return jsonify({'error': 'not found'}), 404
+
+    try:
+        url = str(row.getUrl(s3_prefix=base.s3_prefix, local=local))
+    except (ValueError, AttributeError) as e:
+        app.logger.error('media url error: %s', str(e))
+        return jsonify({'error': 'url unavailable'}), 500
+
+    night = getattr(row, 'night', None)
+    timeofday = 'Night' if night else ('Day' if night is False else '')
+
+    date_obj = getattr(row, 'dayDate', None) or getattr(row, 'createDate', None)
+    if date_obj is not None:
+        if kind == 'image':
+            date_str = date_obj.strftime('%B %d, %Y - %H:%M:%S')
+        else:
+            date_str = date_obj.strftime('%B %d, %Y')
+    else:
+        date_str = ''
+
+    return jsonify({
+        'kind': kind,
+        'type': media_type,
+        'id': media_id,
+        'url': url,
+        'date': date_str,
+        'timeofday': timeofday,
+    })
+
+
 @bp_api_v2.route('/status', methods=['GET'])
 @jwt_required()
 def status():
