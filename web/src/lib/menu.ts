@@ -24,7 +24,7 @@ export const menu: MenuGroup[] = [
   {
     label: 'Media',
     items: [
-      { label: 'Gallery',          to: '/indi-allsky/gallery' },
+      { label: 'Gallery',          to: '/gallery',                          native: true },
       { label: 'Images',           to: '/indi-allsky/imageviewer' },
       { label: 'Timelapses',       to: '/indi-allsky/videoviewer' },
       { label: 'Mini-Timelapses',  to: '/indi-allsky/minivideoviewer' },

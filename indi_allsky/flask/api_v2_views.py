@@ -148,6 +148,15 @@ def loop():
     return jsonify(view.get_objects())
 
 
+@bp_api_v2.route('/gallery', methods=['POST'])
+@jwt_required()
+def gallery():
+    # reuse existing AjaxGalleryViewerView — reads JSON body with CAMERA_ID/YEAR_SELECT/.../FILTER_DETECTIONS
+    from .views import AjaxGalleryViewerView
+    view = AjaxGalleryViewerView()
+    return view.dispatch_request()
+
+
 @bp_api_v2.route('/status', methods=['GET'])
 @jwt_required()
 def status():
