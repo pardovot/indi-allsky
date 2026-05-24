@@ -166,20 +166,101 @@ def imageviewer():
     return view.dispatch_request()
 
 
+def _video_response(form_video_viewer, request_json, has_timeofday):
+    """Build a videoviewer response, auto-populating YEAR_SELECT on initial load.
+
+    The legacy AjaxVideoViewerView.else branch returns an empty MONTH_SELECT
+    when no YEAR_SELECT is sent (it relied on the page template to pre-fill
+    the year). The React UI has no such pre-fill, so we do it here.
+    """
+    form_year      = int(request_json.get('YEAR_SELECT') or 0)
+    form_month     = int(request_json.get('MONTH_SELECT') or 0)
+    form_timeofday = str(request_json.get('TIMEOFDAY_SELECT', '')) if has_timeofday else ''
+
+    json_data = {}
+
+    # If no year provided, look up available years and pick the latest.
+    if not form_year:
+        years = form_video_viewer.getYears()
+        if not years:
+            return {
+                'YEAR_SELECT': (('', 'None'),),
+                'MONTH_SELECT': (('', 'None'),),
+                'video_list': tuple(),
+            }
+        json_data['YEAR_SELECT'] = years
+        form_year = int(years[0][0])
+
+    if form_month:
+        form_datetime = datetime.strptime('{0} {1}'.format(form_year, form_month), '%Y %m')
+        if has_timeofday:
+            json_data['video_list'] = form_video_viewer.getVideos(
+                form_datetime.year, form_datetime.month, form_timeofday,
+            )
+        else:
+            json_data['video_list'] = form_video_viewer.getVideos(
+                form_datetime.year, form_datetime.month,
+            )
+    else:
+        json_data['MONTH_SELECT'] = form_video_viewer.getMonths(form_year)
+        if json_data['MONTH_SELECT']:
+            month = int(json_data['MONTH_SELECT'][0][0])
+            if has_timeofday:
+                json_data['video_list'] = form_video_viewer.getVideos(
+                    form_year, month, form_timeofday,
+                )
+            else:
+                json_data['video_list'] = form_video_viewer.getVideos(form_year, month)
+        else:
+            json_data['video_list'] = tuple()
+
+    return json_data
+
+
 @bp_api_v2.route('/videoviewer', methods=['POST'])
 @jwt_required()
 def videoviewer():
     from .views import AjaxVideoViewerView
-    view = AjaxVideoViewerView()
-    return view.dispatch_request()
+    from .forms import IndiAllskyVideoViewer
+
+    base = AjaxVideoViewerView()
+    camera_id = int(request.json['CAMERA_ID'])
+    base.cameraSetup(camera_id=camera_id)
+
+    local = True
+    if base.web_nonlocal_images:
+        if base.web_local_images_admin and base.verify_admin_network():
+            pass
+        else:
+            local = False
+
+    form_viewer = IndiAllskyVideoViewer(
+        data=request.json, camera_id=camera_id, s3_prefix=base.s3_prefix, local=local,
+    )
+    return jsonify(_video_response(form_viewer, request.json, has_timeofday=True))
 
 
 @bp_api_v2.route('/mini-videoviewer', methods=['POST'])
 @jwt_required()
 def mini_videoviewer():
     from .views import AjaxMiniVideoViewerView
-    view = AjaxMiniVideoViewerView()
-    return view.dispatch_request()
+    from .forms import IndiAllskyMiniVideoViewer
+
+    base = AjaxMiniVideoViewerView()
+    camera_id = int(request.json['CAMERA_ID'])
+    base.cameraSetup(camera_id=camera_id)
+
+    local = True
+    if base.web_nonlocal_images:
+        if base.web_local_images_admin and base.verify_admin_network():
+            pass
+        else:
+            local = False
+
+    form_viewer = IndiAllskyMiniVideoViewer(
+        data=request.json, camera_id=camera_id, s3_prefix=base.s3_prefix, local=local,
+    )
+    return jsonify(_video_response(form_viewer, request.json, has_timeofday=False))
 
 
 @bp_api_v2.route('/latest-panorama', methods=['GET'])
