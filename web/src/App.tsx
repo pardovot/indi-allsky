@@ -26,7 +26,6 @@ import DarkLibrary from './pages/DarkLibrary';
 import DriveManager from './pages/DriveManager';
 import SystemInfo from './pages/SystemInfo';
 import Generate from './pages/Generate';
-import Config from './pages/Config';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -131,7 +130,6 @@ export default function App() {
           <Route path="/drives"            element={<ProtectedRoute><DriveManager /></ProtectedRoute>} />
           <Route path="/system"            element={<ProtectedRoute><SystemInfo /></ProtectedRoute>} />
           <Route path="/generate"          element={<ProtectedRoute><Generate /></ProtectedRoute>} />
-          <Route path="/config"            element={<ProtectedRoute><Config /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

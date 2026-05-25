@@ -157,7 +157,7 @@ function AduContent({ cameraId }: { cameraId: number }) {
                     type="text"
                     value={filters[c.key] ?? ''}
                     onChange={(e) => setFilters((f) => ({ ...f, [c.key]: e.target.value }))}
-                    placeholder="Filter…"
+                    aria-label={`Filter ${c.label}`}
                     className={[
                       'w-full bg-bg-2 border border-edge focus:border-accent focus:outline-none rounded-md px-2 py-1 text-ink text-xs',
                       c.right ? 'text-right font-mono' : '',

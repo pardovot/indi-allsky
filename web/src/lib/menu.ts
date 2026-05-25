@@ -67,7 +67,7 @@ export const menu: MenuGroup[] = [
   {
     label: 'System',
     items: [
-      { label: 'Config',                to: '/config',                   authRequired: true, native: true },
+      { label: 'Config (legacy)',       to: '/indi-allsky/config',       authRequired: true },
       { label: 'Network (legacy)',      to: '/indi-allsky/network',      authRequired: true },
       { label: 'Drives',                to: '/drives',                   authRequired: true, native: true },
       { label: 'GPIO Control (legacy)', to: '/indi-allsky/manual_gpio',  authRequired: true },

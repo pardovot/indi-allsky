@@ -227,6 +227,10 @@ export default function Timelapses({ endpoint, queryKey, title, mini = false }: 
   );
 }
 
+function hasId(v: number | undefined | null): boolean {
+  return v != null && v > 0;
+}
+
 function VideoCard({ item, mini }: { item: VideoItem; mini: boolean }) {
   return (
     <div className="bg-bg-1 border border-edge rounded-lg overflow-hidden flex flex-col">
@@ -255,16 +259,16 @@ function VideoCard({ item, mini }: { item: VideoItem; mini: boolean }) {
 
         {!mini && (
           <div className="flex flex-wrap gap-1">
-            {item.keogram_id != null && (
+            {hasId(item.keogram_id) && (
               <Badge color="warn" href={`/view-keogram?id=${item.keogram_id}`} label="Keogram" />
             )}
-            {item.night && item.startrail_id != null && item.startrail && item.startrail !== 'None' && (
+            {item.night && hasId(item.startrail_id) && item.startrail && item.startrail !== 'None' && (
               <Badge color="primary" href={`/view-startrail?id=${item.startrail_id}`} label="Star Trail" />
             )}
-            {item.night && item.startrail_timelapse_id != null && item.startrail_timelapse && item.startrail_timelapse !== 'None' && (
+            {item.night && hasId(item.startrail_timelapse_id) && item.startrail_timelapse && item.startrail_timelapse !== 'None' && (
               <Badge color="primary" href={`/watch-startrail?id=${item.startrail_timelapse_id}`} label="Star Trail Timelapse" />
             )}
-            {item.panorama_timelapse_id != null && item.panorama_timelapse && item.panorama_timelapse !== 'None' && (
+            {hasId(item.panorama_timelapse_id) && item.panorama_timelapse && item.panorama_timelapse !== 'None' && (
               <Badge color="success" href={`/watch-panorama?id=${item.panorama_timelapse_id}`} label="Panorama" />
             )}
           </div>

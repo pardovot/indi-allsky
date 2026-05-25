@@ -94,44 +94,226 @@ function DrivesContent() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-2 px-3 py-2 bg-bg-2 border border-edge rounded-md text-xs text-ink-dim">
-        <span className="text-info text-[10px] px-1.5 py-0.5 rounded bg-info/10 border border-info/30 mt-0.5">Note</span>
-        <span>
-          Run <code className="font-mono text-ink-bright bg-bg-3 px-1 rounded">./misc/setup_usb_automount.sh</code> to
-          automount USB drives at boot.
-        </span>
-      </div>
+      <SetupNote />
 
       {!q.data.udisks2 && (
-        <div className="px-3 py-2 bg-warn/10 border border-warn/30 rounded text-warn text-xs">UDisks2 not available — drive controls disabled.</div>
+        <Banner tone="warn">UDisks2 not available — drive controls disabled.</Banner>
       )}
       {!isAdmin && q.data.udisks2 && (
-        <div className="px-3 py-2 bg-warn/10 border border-warn/30 rounded text-warn text-xs">Read-only: admin privileges required for actions.</div>
+        <Banner tone="warn">Read-only: admin privileges required to mount/unmount/power off.</Banner>
       )}
       {msg && (
-        <div className={[
-          'text-xs px-3 py-2 rounded border',
-          msg.kind === 'ok'
-            ? 'bg-info/10 border-info/30 text-info'
-            : 'bg-danger/10 border-danger/30 text-danger',
-        ].join(' ')}>
+        <Banner tone={msg.kind === 'ok' ? 'info' : 'danger'} onDismiss={() => setMsg(null)}>
           {msg.text}
-        </div>
+        </Banner>
       )}
 
       {q.data.drives.length === 0 ? (
         <div className="text-ink-dim text-sm">No drives detected.</div>
-      ) : q.data.drives.map((d) => (
-        <DriveCard
-          key={d.id}
-          drive={d}
+      ) : (
+        <DrivesTable
+          drives={q.data.drives}
           isAdmin={isAdmin}
-          onAction={(body) => { setMsg(null); act.mutate(body); }}
           busy={act.isPending}
+          onAction={(body) => { setMsg(null); act.mutate(body); }}
         />
-      ))}
+      )}
     </div>
   );
+}
+
+function SetupNote() {
+  return (
+    <div className="bg-bg-1 border-l-2 border-info/60 border-y border-r border-edge rounded-md px-3 py-2 text-xs text-ink-dim flex items-center gap-2">
+      <span className="text-info font-medium">Tip</span>
+      <span>
+        Run <code className="font-mono text-ink bg-bg-3 px-1.5 py-0.5 rounded">./misc/setup_usb_automount.sh</code> to
+        automount USB drives at boot.
+      </span>
+    </div>
+  );
+}
+
+function Banner({
+  tone, children, onDismiss,
+}: { tone: 'info' | 'warn' | 'danger'; children: React.ReactNode; onDismiss?: () => void }) {
+  const cls =
+    tone === 'info'   ? 'bg-info/10   border-info/30   text-info' :
+    tone === 'warn'   ? 'bg-warn/10   border-warn/30   text-warn' :
+                        'bg-danger/10 border-danger/30 text-danger';
+  return (
+    <div className={['flex items-center gap-3 px-3 py-2 rounded border text-xs', cls].join(' ')}>
+      <div className="flex-1">{children}</div>
+      {onDismiss && (
+        <button onClick={onDismiss} className="opacity-60 hover:opacity-100 text-base leading-none">×</button>
+      )}
+    </div>
+  );
+}
+
+function DrivesTable({
+  drives, isAdmin, busy, onAction,
+}: {
+  drives: Drive[]; isAdmin: boolean; busy: boolean;
+  onAction: (body: Record<string, string>) => void;
+}) {
+  return (
+    <div className="bg-bg-1 border border-edge rounded-lg overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-bg-2 text-ink-dim text-[10px] uppercase tracking-wider">
+            <tr>
+              <th className="text-left  px-3 py-2 w-44">Drive</th>
+              <th className="text-left  px-3 py-2">Vendor / Model</th>
+              <th className="text-right px-3 py-2 w-24">Size</th>
+              <th className="text-left  px-3 py-2 w-24">Bus</th>
+              <th className="text-left  px-3 py-2 w-32">Flags</th>
+              {isAdmin && <th className="text-right px-3 py-2 w-44">Drive actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {drives.map((d) => (
+              <DriveBlock key={d.id} drive={d} isAdmin={isAdmin} busy={busy} onAction={onAction} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function DriveBlock({
+  drive, isAdmin, busy, onAction,
+}: {
+  drive: Drive; isAdmin: boolean; busy: boolean;
+  onAction: (body: Record<string, string>) => void;
+}) {
+  const [confirmPower, setConfirmPower] = useState(false);
+
+  return (
+    <>
+      <tr className="border-t border-edge bg-bg-2/40">
+        <td className="px-3 py-2 font-mono text-ink-bright">{drive.id}</td>
+        <td className="px-3 py-2 text-ink">{drive.vendor} <span className="text-ink-dim">/ {drive.model || '—'}</span></td>
+        <td className="px-3 py-2 text-right font-mono text-ink">{fmtSize(drive.size)}</td>
+        <td className="px-3 py-2 text-ink-dim">{drive.connection_bus}</td>
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap gap-1">
+            {drive.removable     && <Tag tone="warn">removable</Tag>}
+            {drive.ejectable     && <Tag>ejectable</Tag>}
+            {drive.can_power_off && <Tag tone="info">power-off</Tag>}
+            {drive.media         && <Tag>{drive.media}</Tag>}
+          </div>
+        </td>
+        {isAdmin && (
+          <td className="px-3 py-2">
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => copyDriveDetails(drive)}
+                title="Copy drive details"
+                className="px-2 py-0.5 rounded bg-bg-3 hover:bg-bg-2 border border-edge text-ink-dim hover:text-ink text-xs"
+              >Copy</button>
+              {drive.can_power_off ? (
+                <>
+                  <label className="text-[10px] text-ink-dim flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" checked={confirmPower} onChange={(e) => setConfirmPower(e.target.checked)} />
+                    Confirm
+                  </label>
+                  <button
+                    disabled={!confirmPower || busy}
+                    onClick={() => { setConfirmPower(false); onAction({ COMMAND: 'poweroff', DRIVE_ID: drive.id }); }}
+                    className="px-2 py-0.5 rounded bg-bg-3 hover:bg-bg-2 border border-danger/40 text-danger text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                  >Power off</button>
+                </>
+              ) : <span className="text-[10px] text-ink-dim italic">—</span>}
+            </div>
+          </td>
+        )}
+      </tr>
+      {drive.block_devices.length === 0 ? (
+        <tr className="border-t border-edge">
+          <td colSpan={isAdmin ? 6 : 5} className="px-6 py-2 text-ink-dim text-xs italic">No partitions on this drive</td>
+        </tr>
+      ) : drive.block_devices.map((b) => (
+        <PartitionRow key={b.device} b={b} isAdmin={isAdmin} busy={busy} onAction={onAction} />
+      ))}
+    </>
+  );
+}
+
+function PartitionRow({
+  b, isAdmin, busy, onAction,
+}: {
+  b: BlockDevice; isAdmin: boolean; busy: boolean;
+  onAction: (body: Record<string, string>) => void;
+}) {
+  const mounted = b.mounts.length > 0;
+  const [confirmProt, setConfirmProt] = useState(false);
+
+  return (
+    <tr className="border-t border-edge hover:bg-bg-2/40 transition-colors">
+      <td className="px-3 py-1.5 pl-8 font-mono text-ink-dim text-xs">└ {b.device}</td>
+      <td className="px-3 py-1.5 text-ink-dim text-xs" colSpan={1}>
+        <span className="font-mono text-ink">{b.fstype || '—'}</span>
+        {b.label && <span className="ml-2">{b.label}</span>}
+      </td>
+      <td className="px-3 py-1.5 text-right font-mono text-ink-dim text-xs">{fmtSize(b.size)}</td>
+      <td className="px-3 py-1.5 text-ink-dim text-xs" colSpan={2}>
+        {mounted ? (
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-ink">{b.mounts.join(', ')}</span>
+            {b.protected && <Tag tone="warn">system</Tag>}
+          </div>
+        ) : (
+          <span className="text-ink-dim/60 italic">unmounted</span>
+        )}
+      </td>
+      {isAdmin && (
+        <td className="px-3 py-1.5">
+          <div className="flex items-center justify-end gap-2">
+            {!b.mountable ? (
+              <span className="text-[10px] text-ink-dim italic">no filesystem</span>
+            ) : !b.block_id ? (
+              <span className="text-[10px] text-ink-dim italic">missing id</span>
+            ) : b.protected && mounted ? (
+              <>
+                <label className="text-[10px] text-ink-dim flex items-center gap-1 cursor-pointer" title="System mount — unmounting may break the OS">
+                  <input type="checkbox" checked={confirmProt} onChange={(e) => setConfirmProt(e.target.checked)} />
+                  Force
+                </label>
+                <button
+                  disabled={!confirmProt || busy}
+                  onClick={() => { setConfirmProt(false); onAction({ COMMAND: 'unmount', DEVICE_ID: b.block_id }); }}
+                  title="Unmounting a protected/system mount is blocked by the server"
+                  className="px-2 py-0.5 rounded bg-bg-3 hover:bg-bg-2 border border-danger/40 text-danger text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                >Unmount</button>
+              </>
+            ) : mounted ? (
+              <button
+                disabled={busy}
+                onClick={() => onAction({ COMMAND: 'unmount', DEVICE_ID: b.block_id })}
+                className="px-2 py-0.5 rounded bg-bg-3 hover:bg-bg-2 border border-edge text-warn text-xs disabled:opacity-40"
+              >Unmount</button>
+            ) : (
+              <button
+                disabled={busy}
+                onClick={() => onAction({ COMMAND: 'mount', DEVICE_ID: b.block_id })}
+                className="px-2 py-0.5 rounded bg-bg-3 hover:bg-bg-2 border border-edge text-info text-xs disabled:opacity-40"
+              >Mount</button>
+            )}
+          </div>
+        </td>
+      )}
+    </tr>
+  );
+}
+
+function Tag({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'warn' | 'info' }) {
+  const cls =
+    tone === 'warn' ? 'bg-bg-3 text-warn' :
+    tone === 'info' ? 'bg-bg-3 text-info' :
+                      'bg-bg-3 text-ink-dim';
+  return <span className={['text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap', cls].join(' ')}>{children}</span>;
 }
 
 function copyDriveDetails(d: Drive) {
@@ -147,146 +329,10 @@ function copyDriveDetails(d: Drive) {
     `Ejectable: ${d.ejectable}`,
     `CanPowerOff: ${d.can_power_off}`,
     '',
-    'Block devices:',
+    'Partitions:',
     ...d.block_devices.map((b) =>
-      `  ${b.device}  ${b.fstype || '—'}  ${b.label || '—'}  ${fmtSize(b.size)}  ${b.mounts.join(', ') || 'unmounted'}${b.protected ? '  [protected]' : ''}`,
+      `  ${b.device}\t${b.fstype || '-'}\t${b.label || '-'}\t${fmtSize(b.size)}\t${b.mounts.join(', ') || 'unmounted'}${b.protected ? '\t[protected]' : ''}`,
     ),
   ];
   navigator.clipboard.writeText(lines.join('\n')).catch(() => {});
-}
-
-function DriveCard({
-  drive, isAdmin, onAction, busy,
-}: {
-  drive: Drive; isAdmin: boolean; busy: boolean;
-  onAction: (body: Record<string, string>) => void;
-}) {
-  const [confirmPower, setConfirmPower] = useState(false);
-  const [expanded, setExpanded] = useState(true);
-
-  return (
-    <div className="bg-bg-1 border border-edge rounded-lg overflow-hidden">
-      <div className="px-3 py-2 bg-bg-2 border-b border-edge flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="text-ink-dim hover:text-ink-bright px-1"
-          aria-label={expanded ? 'Collapse' : 'Expand'}
-        >{expanded ? '▾' : '▸'}</button>
-        <div className="text-ink-bright text-sm font-medium font-mono">{drive.id}</div>
-        <div className="text-ink-dim text-xs">{drive.vendor} {drive.model}</div>
-        <div className="text-ink-dim text-xs font-mono">{fmtSize(drive.size)}</div>
-        <div className="text-ink-dim text-xs">{drive.connection_bus}</div>
-        {drive.removable && <span className="text-[10px] bg-bg-3 text-warn px-1.5 py-0.5 rounded">removable</span>}
-        {drive.media && <span className="text-[10px] bg-bg-3 text-ink-dim px-1.5 py-0.5 rounded">{drive.media}</span>}
-        <div className="flex-1" />
-        <button
-          onClick={() => copyDriveDetails(drive)}
-          className="px-2 py-0.5 rounded bg-bg-1 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink text-xs"
-        >Copy</button>
-        {drive.can_power_off && isAdmin && (
-          <>
-            <label className="text-xs text-ink-dim flex items-center gap-1.5 cursor-pointer">
-              <input type="checkbox" checked={confirmPower} onChange={(e) => setConfirmPower(e.target.checked)} />
-              Confirm
-            </label>
-            <button
-              disabled={!confirmPower || busy}
-              onClick={() => { setConfirmPower(false); onAction({ COMMAND: 'poweroff', DRIVE_ID: drive.id }); }}
-              className="px-2.5 py-1 rounded-md bg-bg-1 hover:bg-bg-3 border border-danger/40 text-danger text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-            >Power off</button>
-          </>
-        )}
-      </div>
-
-      {expanded && (
-        <>
-          <div className="px-3 py-1.5 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-xs border-b border-edge">
-            {drive.serial && <KV label="Serial" value={drive.serial} />}
-            <KV label="Removable"  value={drive.removable ? 'yes' : 'no'} />
-            <KV label="Ejectable"  value={drive.ejectable ? 'yes' : 'no'} />
-            <KV label="Power off"  value={drive.can_power_off ? 'supported' : 'no'} />
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-bg-2 text-ink-dim text-[10px] uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-3 py-1.5">Device</th>
-                  <th className="text-left px-3 py-1.5">Label</th>
-                  <th className="text-left px-3 py-1.5">FS</th>
-                  <th className="text-right px-3 py-1.5">Size</th>
-                  <th className="text-left px-3 py-1.5">Mount</th>
-                  {isAdmin && <th className="text-right px-3 py-1.5">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {drive.block_devices.length === 0 ? (
-                  <tr><td colSpan={isAdmin ? 6 : 5} className="px-3 py-3 text-center text-ink-dim text-xs">No partitions</td></tr>
-                ) : drive.block_devices.map((b) => (
-                  <tr key={b.device} className="border-t border-edge">
-                    <td className="px-3 py-1 font-mono text-ink">{b.device}</td>
-                    <td className="px-3 py-1 text-ink-dim">{b.label || '—'}</td>
-                    <td className="px-3 py-1 text-ink-dim">{b.fstype || '—'}</td>
-                    <td className="px-3 py-1 text-right font-mono text-ink-dim">{fmtSize(b.size)}</td>
-                    <td className="px-3 py-1 font-mono text-ink-dim text-xs">
-                      {b.mounts.length ? (
-                        <span className="flex items-center gap-2">
-                          <span>{b.mounts.join(', ')}</span>
-                          {b.protected && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-3 text-warn">system</span>
-                          )}
-                        </span>
-                      ) : <span className="text-ink-dim/60">unmounted</span>}
-                    </td>
-                    {isAdmin && (
-                      <td className="px-3 py-1 text-right">
-                        <ActionButtons b={b} onAction={onAction} busy={busy} />
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function ActionButtons({
-  b, onAction, busy,
-}: {
-  b: BlockDevice; busy: boolean;
-  onAction: (body: Record<string, string>) => void;
-}) {
-  if (!b.mountable) return <span className="text-ink-dim/60 text-xs">—</span>;
-  if (!b.block_id) return <span className="text-ink-dim/60 text-xs">no id</span>;
-  if (b.protected) return <span className="text-ink-dim/60 text-xs">protected</span>;
-
-  if (b.mounts.length) {
-    return (
-      <button
-        disabled={busy}
-        onClick={() => onAction({ COMMAND: 'unmount', DEVICE_ID: b.block_id })}
-        className="px-2 py-0.5 rounded bg-bg-2 hover:bg-bg-3 border border-edge text-warn text-xs disabled:opacity-40"
-      >Unmount</button>
-    );
-  }
-  return (
-    <button
-      disabled={busy}
-      onClick={() => onAction({ COMMAND: 'mount', DEVICE_ID: b.block_id })}
-      className="px-2 py-0.5 rounded bg-bg-2 hover:bg-bg-3 border border-edge text-info text-xs disabled:opacity-40"
-    >Mount</button>
-  );
-}
-
-function KV({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline gap-2 min-w-0">
-      <span className="text-ink-dim whitespace-nowrap">{label}</span>
-      <span className="font-mono text-ink truncate">{value}</span>
-    </div>
-  );
 }
