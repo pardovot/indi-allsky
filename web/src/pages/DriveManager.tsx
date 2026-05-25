@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import PageShell from '@/components/PageShell';
+import Select from '@/components/Select';
 
 interface BlockDevice {
   device: string;
@@ -36,6 +37,12 @@ interface DrivesResp {
   protected_filesystems: string[];
 }
 
+// Flat block-device entry decorated with its parent drive's id, for the
+// Mounts tab dropdown.
+interface FlatDevice extends BlockDevice {
+  drive_id: string;
+}
+
 function fmtSize(bytes: number): string {
   if (!bytes) return '—';
   const gb = bytes / 1024 / 1024 / 1024;
@@ -44,6 +51,8 @@ function fmtSize(bytes: number): string {
   if (mb >= 1) return `${mb.toFixed(0)} MB`;
   return `${(bytes / 1024).toFixed(0)} KB`;
 }
+
+type Tab = 'drives' | 'mounts';
 
 export default function DriveManager() {
   return (
@@ -60,6 +69,9 @@ export default function DriveManager() {
 
 function DrivesContent() {
   const qc = useQueryClient();
+  const [tab, setTab] = useState<Tab>('drives');
+  const [selectedDriveId, setSelectedDriveId] = useState<string>('');
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const meQ = useQuery({
@@ -74,6 +86,33 @@ function DrivesContent() {
     queryFn: () => api<DrivesResp>('/drives'),
     refetchInterval: 10_000,
   });
+
+  // Flatten block-devices across all drives for the Mounts tab.
+  const allDevices: FlatDevice[] = useMemo(() => {
+    if (!q.data) return [];
+    const out: FlatDevice[] = [];
+    for (const d of q.data.drives) {
+      for (const b of d.block_devices ?? []) {
+        if (b.mountable || b.mounts.length > 0) out.push({ ...b, drive_id: d.id });
+      }
+    }
+    return out;
+  }, [q.data]);
+
+  // Auto-select sensible defaults once data arrives / changes.
+  useEffect(() => {
+    if (!q.data || q.data.drives.length === 0) return;
+    if (!selectedDriveId || !q.data.drives.some((d) => d.id === selectedDriveId)) {
+      setSelectedDriveId(q.data.drives[0].id);
+    }
+  }, [q.data, selectedDriveId]);
+
+  useEffect(() => {
+    if (allDevices.length === 0) return;
+    if (!selectedDeviceId || !allDevices.some((b) => b.block_id === selectedDeviceId)) {
+      setSelectedDeviceId(allDevices[0].block_id);
+    }
+  }, [allDevices, selectedDeviceId]);
 
   const act = useMutation({
     mutationFn: (body: Record<string, string>) =>
@@ -100,39 +139,320 @@ function DrivesContent() {
 
       {!q.data.udisks2 && <Banner tone="warn">UDisks2 not available — drive controls disabled.</Banner>}
       {!isAdmin && q.data.udisks2 && (
-        <Banner tone="warn">Read-only: admin privileges required to mount/unmount or power off.</Banner>
-      )}
-      {msg && (
-        <Banner tone={msg.kind === 'ok' ? 'info' : 'danger'} onDismiss={() => setMsg(null)}>
-          {msg.text}
-        </Banner>
+        <Banner tone="warn">Read-only — admin privileges required for any action.</Banner>
       )}
 
-      {q.data.drives.length === 0 ? (
-        <div className="text-ink-dim text-sm">No drives detected.</div>
-      ) : q.data.drives.map((d) => (
-        <DriveCard
-          key={d.id}
-          drive={d}
+      {/* Tab bar — mirrors the legacy Drives / Mounts split. */}
+      <div className="flex items-center gap-1 border-b border-edge">
+        <TabBtn active={tab === 'drives'} onClick={() => setTab('drives')}>Drives</TabBtn>
+        <TabBtn active={tab === 'mounts'} onClick={() => setTab('mounts')}>Mounts</TabBtn>
+      </div>
+
+      {tab === 'drives' && (
+        <DrivesTab
+          drives={q.data.drives}
+          selectedId={selectedDriveId}
+          onSelect={setSelectedDriveId}
           isAdmin={isAdmin}
           busy={act.isPending}
           onAction={(body) => { setMsg(null); act.mutate(body); }}
+          message={msg}
+          clearMessage={() => setMsg(null)}
         />
-      ))}
+      )}
+      {tab === 'mounts' && (
+        <MountsTab
+          devices={allDevices}
+          selectedId={selectedDeviceId}
+          onSelect={setSelectedDeviceId}
+          isAdmin={isAdmin}
+          busy={act.isPending}
+          onAction={(body) => { setMsg(null); act.mutate(body); }}
+          message={msg}
+          clearMessage={() => setMsg(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Drives tab ──────────────────────────────────────────────────────────
+
+function DrivesTab({
+  drives, selectedId, onSelect, isAdmin, busy, onAction, message, clearMessage,
+}: {
+  drives: Drive[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  isAdmin: boolean;
+  busy: boolean;
+  onAction: (body: Record<string, string>) => void;
+  message: { kind: 'ok' | 'err'; text: string } | null;
+  clearMessage: () => void;
+}) {
+  const [confirmPower, setConfirmPower] = useState(false);
+  const selected = drives.find((d) => d.id === selectedId);
+
+  const options = drives.length
+    ? drives.map((d) => ({
+        value: d.id,
+        label: driveOptionLabel(d),
+      }))
+    : [{ value: '', label: 'No drives' }];
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-end gap-3 flex-wrap">
+        <Field label="Drive" className="flex-1 min-w-[260px]">
+          <Select<string>
+            value={selectedId}
+            options={options}
+            onChange={onSelect}
+            buttonClassName="w-full justify-between"
+            className="w-full"
+          />
+        </Field>
+        {isAdmin && selected?.can_power_off && (
+          <div className="flex items-center gap-2">
+            <label className="text-[11px] text-ink-dim flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmPower}
+                onChange={(e) => setConfirmPower(e.target.checked)}
+                className="accent-danger"
+              />
+              Confirm
+            </label>
+            <button
+              disabled={!confirmPower || busy}
+              onClick={() => {
+                setConfirmPower(false);
+                onAction({ COMMAND: 'poweroff', DRIVE_ID: selected.id });
+              }}
+              className="px-3 py-1.5 rounded-md bg-bg-2 hover:bg-danger/10 border border-danger/40 text-danger text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            >Power off</button>
+          </div>
+        )}
+      </div>
+
+      {message && (
+        <Banner tone={message.kind === 'ok' ? 'info' : 'danger'} onDismiss={clearMessage}>
+          {message.text}
+        </Banner>
+      )}
+
+      {selected && <DriveDetails drive={selected} />}
+    </section>
+  );
+}
+
+function driveOptionLabel(d: Drive): string {
+  const vendor = d.vendor || '[no vendor]';
+  const model = d.model || '';
+  return `${vendor} — ${model || d.id} · ${fmtSize(d.size)} · ${d.connection_bus}`;
+}
+
+function DriveDetails({ drive }: { drive: Drive }) {
+  const rows: { label: string; value: React.ReactNode; mono?: boolean }[] = [
+    { label: 'Id',                value: drive.id,                                mono: true },
+    { label: 'Vendor',            value: drive.vendor || '—' },
+    { label: 'Model',             value: drive.model  || '—' },
+    { label: 'Size',              value: fmtSize(drive.size),                     mono: true },
+    { label: 'Connection bus',    value: drive.connection_bus },
+    { label: 'Serial',            value: drive.serial || '—',                    mono: true },
+    { label: 'Media',             value: drive.media  || '—' },
+    { label: 'Media compatibility', value: (drive.media_compatibility ?? []).join(', ') || '—' },
+    { label: 'Removable',         value: drive.removable     ? 'yes' : 'no' },
+    { label: 'Ejectable',         value: drive.ejectable     ? 'yes' : 'no' },
+    { label: 'Can power off',     value: drive.can_power_off ? 'yes' : 'no' },
+    { label: 'Time detected',     value: drive.time_detected       || '—',       mono: true },
+    { label: 'Time media detected', value: drive.time_media_detected || '—',     mono: true },
+  ];
+
+  return (
+    <div className="bg-bg-1 border border-edge rounded-md overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 bg-bg-2 border-b border-edge">
+        <span className="text-ink-dim text-[10px] uppercase tracking-wider">Drive details</span>
+        <button
+          onClick={() => copyDriveDetails(drive)}
+          className="text-xs px-2 py-0.5 rounded bg-bg-1 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink"
+        >Copy</button>
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-t first:border-t-0 border-edge/60">
+              <th className="text-left text-ink-dim text-xs font-normal px-4 py-2 w-56 align-top">{r.label}</th>
+              <td className={['px-4 py-2 text-ink', r.mono ? 'font-mono' : ''].join(' ')}>{r.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Mounts tab ──────────────────────────────────────────────────────────
+
+function MountsTab({
+  devices, selectedId, onSelect, isAdmin, busy, onAction, message, clearMessage,
+}: {
+  devices: FlatDevice[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  isAdmin: boolean;
+  busy: boolean;
+  onAction: (body: Record<string, string>) => void;
+  message: { kind: 'ok' | 'err'; text: string } | null;
+  clearMessage: () => void;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const selected = devices.find((d) => d.block_id === selectedId);
+  const mounted = !!selected && selected.mounts.length > 0;
+
+  const options = devices.length
+    ? devices.map((d) => ({
+        value: d.block_id,
+        label: mountOptionLabel(d),
+      }))
+    : [{ value: '', label: 'No mountable devices' }];
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-end gap-3 flex-wrap">
+        <Field label="Device" className="flex-1 min-w-[260px]">
+          <Select<string>
+            value={selectedId}
+            options={options}
+            onChange={onSelect}
+            buttonClassName="w-full justify-between"
+            className="w-full"
+          />
+        </Field>
+        {isAdmin && selected && (
+          <div className="flex items-center gap-2">
+            <label className="text-[11px] text-ink-dim flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirm}
+                onChange={(e) => setConfirm(e.target.checked)}
+                className="accent-info"
+              />
+              Confirm
+            </label>
+            <button
+              disabled={!confirm || busy || mounted}
+              onClick={() => { setConfirm(false); onAction({ COMMAND: 'mount', DEVICE_ID: selected.block_id }); }}
+              className="px-3 py-1.5 rounded-md bg-bg-2 hover:bg-info/10 border border-info/40 text-info text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            >Mount</button>
+            <button
+              disabled={!confirm || busy || !mounted}
+              onClick={() => { setConfirm(false); onAction({ COMMAND: 'unmount', DEVICE_ID: selected.block_id }); }}
+              className={[
+                'px-3 py-1.5 rounded-md border text-sm disabled:opacity-40 disabled:cursor-not-allowed',
+                selected.protected
+                  ? 'bg-bg-2 hover:bg-danger/10 border-danger/40 text-danger'
+                  : 'bg-bg-2 hover:bg-bg-3 border-warn/40 text-warn',
+              ].join(' ')}
+            >Unmount</button>
+          </div>
+        )}
+      </div>
+
+      {message && (
+        <Banner tone={message.kind === 'ok' ? 'info' : 'danger'} onDismiss={clearMessage}>
+          {message.text}
+        </Banner>
+      )}
+
+      {selected && <DeviceDetails dev={selected} />}
+    </section>
+  );
+}
+
+function mountOptionLabel(d: FlatDevice): string {
+  const mp = d.mounts.length ? d.mounts.join(', ') : 'unmounted';
+  const fs = d.fstype || '—';
+  const label = d.label ? ` "${d.label}"` : '';
+  return `${d.device}${label} · ${fs} · ${fmtSize(d.size)} · ${mp}`;
+}
+
+function DeviceDetails({ dev }: { dev: FlatDevice }) {
+  const mounted = dev.mounts.length > 0;
+  return (
+    <div className="bg-bg-1 border border-edge rounded-md overflow-hidden">
+      <div className="px-4 py-2 bg-bg-2 border-b border-edge flex items-center justify-between">
+        <span className="text-ink-dim text-[10px] uppercase tracking-wider">Device details</span>
+        {dev.protected && <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-3 text-warn">system mount</span>}
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          <Row label="Device path"   value={<span className="font-mono">{dev.device}</span>} />
+          <Row label="Drive"         value={<span className="font-mono">{dev.drive_id}</span>} />
+          <Row label="Filesystem"    value={dev.fstype || '—'} />
+          <Row label="Label"         value={dev.label  || '—'} />
+          <Row label="Size"          value={<span className="font-mono">{fmtSize(dev.size)}</span>} />
+          <Row
+            label="Mount point"
+            value={mounted
+              ? <span className="font-mono text-ink">{dev.mounts.join(', ')}</span>
+              : <span className="text-ink-dim italic">unmounted</span>}
+          />
+          <Row label="Status"        value={mounted ? <span className="text-info">mounted</span> : <span className="text-ink-dim">unmounted</span>} />
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Shared ──────────────────────────────────────────────────────────────
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <tr className="border-t first:border-t-0 border-edge/60">
+      <th className="text-left text-ink-dim text-xs font-normal px-4 py-2 w-56 align-top">{label}</th>
+      <td className="px-4 py-2 text-ink">{value}</td>
+    </tr>
+  );
+}
+
+function Field({
+  label, children, className,
+}: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={['flex flex-col gap-1', className ?? ''].join(' ')}>
+      <span className="text-[10px] uppercase tracking-wider text-ink-dim">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function TabBtn({
+  active, onClick, children,
+}: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={[
+        'px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+        active
+          ? 'border-accent text-ink-bright'
+          : 'border-transparent text-ink-dim hover:text-ink',
+      ].join(' ')}
+    >{children}</button>
   );
 }
 
 function TipNote() {
   return (
-    <div className="bg-info/5 border border-info/30 rounded-md px-3 py-2 text-xs text-ink flex items-center gap-2">
+    <div className="flex items-center gap-2 text-xs text-ink-dim">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
            strokeLinecap="round" strokeLinejoin="round" className="text-info shrink-0">
         <circle cx="12" cy="12" r="10" />
         <line x1="12" y1="16" x2="12" y2="12" />
         <line x1="12" y1="8" x2="12.01" y2="8" />
       </svg>
-      <span className="text-ink-dim">
+      <span>
         Run <code className="font-mono text-ink-bright bg-bg-3 px-1.5 py-0.5 rounded">./misc/setup_usb_automount.sh</code> to
         automount USB drives at boot.
       </span>
@@ -155,219 +475,6 @@ function Banner({
       )}
     </div>
   );
-}
-
-function DriveCard({
-  drive, isAdmin, busy, onAction,
-}: {
-  drive: Drive; isAdmin: boolean; busy: boolean;
-  onAction: (body: Record<string, string>) => void;
-}) {
-  const [confirmPower, setConfirmPower] = useState(false);
-  const title = `${drive.vendor} ${drive.model}`.trim() || drive.id;
-
-  return (
-    <div className="bg-bg-1 border border-edge rounded-lg overflow-hidden">
-      {/* Drive header */}
-      <div className="px-4 py-3 bg-bg-2 border-b border-edge flex items-start justify-between gap-4 flex-wrap">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-ink-bright font-semibold text-base truncate">{title}</span>
-            {drive.removable     && <Tag tone="warn">removable</Tag>}
-            {drive.ejectable     && <Tag>ejectable</Tag>}
-            {drive.can_power_off && <Tag tone="info">power-off</Tag>}
-          </div>
-          <div className="text-ink-dim text-xs font-mono mt-0.5 truncate">{drive.id}</div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => copyDriveDetails(drive)}
-            className="px-2.5 py-1 rounded-md bg-bg-1 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink text-xs"
-          >Copy details</button>
-          {isAdmin && drive.can_power_off && (
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] text-ink-dim flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={confirmPower}
-                  onChange={(e) => setConfirmPower(e.target.checked)}
-                  className="accent-danger"
-                />
-                Confirm
-              </label>
-              <button
-                disabled={!confirmPower || busy}
-                onClick={() => { setConfirmPower(false); onAction({ COMMAND: 'poweroff', DRIVE_ID: drive.id }); }}
-                className="px-2.5 py-1 rounded-md bg-bg-1 hover:bg-danger/10 border border-danger/40 text-danger text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-              >Power off</button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Metadata strip */}
-      <dl className="px-4 py-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs border-b border-edge">
-        <Meta label="Size"     value={fmtSize(drive.size)} mono />
-        <Meta label="Bus"      value={drive.connection_bus} />
-        <Meta label="Media"    value={drive.media || '—'} />
-        <Meta label="Serial"   value={drive.serial || '—'} mono />
-        {(drive.media_compatibility?.length ?? 0) > 0 && (
-          <Meta label="Compatible" value={drive.media_compatibility!.join(', ')} className="col-span-2" />
-        )}
-        {drive.time_detected && (
-          <Meta label="Detected" value={drive.time_detected} mono />
-        )}
-        {drive.time_media_detected && (
-          <Meta label="Media seen" value={drive.time_media_detected} mono />
-        )}
-      </dl>
-
-      {/* Mounts sub-table */}
-      <MountsTable drive={drive} isAdmin={isAdmin} busy={busy} onAction={onAction} />
-    </div>
-  );
-}
-
-function Meta({
-  label, value, mono, className,
-}: { label: string; value: string; mono?: boolean; className?: string }) {
-  return (
-    <div className={['flex flex-col gap-0.5 min-w-0', className ?? ''].join(' ')}>
-      <dt className="text-[10px] uppercase tracking-wider text-ink-dim">{label}</dt>
-      <dd className={['truncate text-ink', mono ? 'font-mono' : ''].join(' ')}>{value}</dd>
-    </div>
-  );
-}
-
-function MountsTable({
-  drive, isAdmin, busy, onAction,
-}: {
-  drive: Drive; isAdmin: boolean; busy: boolean;
-  onAction: (body: Record<string, string>) => void;
-}) {
-  // Filter out raw whole-disk entries (no filesystem) — the original page
-  // doesn't list them in the Mounts tab either.
-  const partitions = (drive.block_devices ?? []).filter((b) => b.mountable || b.mounts.length > 0);
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-bg-1 text-ink-dim text-[10px] uppercase tracking-wider">
-          <tr>
-            <th className="text-left px-4 py-2 w-44">Device</th>
-            <th className="text-left px-4 py-2 w-24">FS</th>
-            <th className="text-left px-4 py-2">Label</th>
-            <th className="text-right px-4 py-2 w-24">Size</th>
-            <th className="text-left px-4 py-2">Mount point</th>
-            {isAdmin && <th className="text-right px-4 py-2 w-40">Action</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {partitions.length === 0 ? (
-            <tr><td colSpan={isAdmin ? 6 : 5} className="px-4 py-3 text-center text-ink-dim text-xs">No partitions on this drive</td></tr>
-          ) : partitions.map((b) => (
-            <MountRow key={b.device} b={b} isAdmin={isAdmin} busy={busy} onAction={onAction} />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function MountRow({
-  b, isAdmin, busy, onAction,
-}: {
-  b: BlockDevice; isAdmin: boolean; busy: boolean;
-  onAction: (body: Record<string, string>) => void;
-}) {
-  const mounted = b.mounts.length > 0;
-  const [confirmProt, setConfirmProt] = useState(false);
-
-  return (
-    <tr className="border-t border-edge hover:bg-bg-2/40 transition-colors">
-      <td className="px-4 py-2 font-mono text-ink text-xs">{b.device}</td>
-      <td className="px-4 py-2 font-mono text-ink-dim text-xs">{b.fstype || '—'}</td>
-      <td className="px-4 py-2 text-ink-dim text-xs">{b.label || '—'}</td>
-      <td className="px-4 py-2 text-right font-mono text-ink-dim text-xs">{fmtSize(b.size)}</td>
-      <td className="px-4 py-2 text-xs">
-        {mounted ? (
-          <span className="inline-flex items-center gap-2">
-            <span className="font-mono text-ink">{b.mounts.join(', ')}</span>
-            {b.protected && <Tag tone="warn">system</Tag>}
-          </span>
-        ) : (
-          <span className="text-ink-dim italic">unmounted</span>
-        )}
-      </td>
-      {isAdmin && (
-        <td className="px-4 py-2">
-          <div className="flex items-center justify-end gap-2">
-            <MountAction
-              b={b} mounted={mounted} busy={busy} onAction={onAction}
-              confirmProt={confirmProt} setConfirmProt={setConfirmProt}
-            />
-          </div>
-        </td>
-      )}
-    </tr>
-  );
-}
-
-function MountAction({
-  b, mounted, busy, confirmProt, setConfirmProt, onAction,
-}: {
-  b: BlockDevice; mounted: boolean; busy: boolean;
-  confirmProt: boolean; setConfirmProt: (v: boolean) => void;
-  onAction: (body: Record<string, string>) => void;
-}) {
-  if (!b.block_id) return <span className="text-[10px] text-ink-dim italic">no id</span>;
-
-  if (b.protected && mounted) {
-    return (
-      <>
-        <label className="text-[10px] text-ink-dim flex items-center gap-1 cursor-pointer" title="System mount — the server will refuse unless you understand the risk">
-          <input
-            type="checkbox"
-            checked={confirmProt}
-            onChange={(e) => setConfirmProt(e.target.checked)}
-            className="accent-danger"
-          />
-          Force
-        </label>
-        <button
-          disabled={!confirmProt || busy}
-          onClick={() => { setConfirmProt(false); onAction({ COMMAND: 'unmount', DEVICE_ID: b.block_id }); }}
-          className="px-2.5 py-1 rounded-md bg-bg-2 hover:bg-danger/10 border border-danger/40 text-danger text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-        >Unmount</button>
-      </>
-    );
-  }
-
-  if (mounted) {
-    return (
-      <button
-        disabled={busy}
-        onClick={() => onAction({ COMMAND: 'unmount', DEVICE_ID: b.block_id })}
-        className="px-2.5 py-1 rounded-md bg-bg-2 hover:bg-bg-3 border border-warn/40 text-warn text-xs disabled:opacity-40"
-      >Unmount</button>
-    );
-  }
-
-  return (
-    <button
-      disabled={busy}
-      onClick={() => onAction({ COMMAND: 'mount', DEVICE_ID: b.block_id })}
-      className="px-2.5 py-1 rounded-md bg-bg-2 hover:bg-bg-3 border border-info/40 text-info text-xs disabled:opacity-40"
-    >Mount</button>
-  );
-}
-
-function Tag({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'warn' | 'info' }) {
-  const cls =
-    tone === 'warn' ? 'bg-bg-3 text-warn' :
-    tone === 'info' ? 'bg-bg-3 text-info' :
-                      'bg-bg-3 text-ink-dim';
-  return <span className={['text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap', cls].join(' ')}>{children}</span>;
 }
 
 function copyDriveDetails(d: Drive) {
