@@ -140,3 +140,51 @@ export function setPath<T>(obj: T, path: FieldPath, value: unknown): T {
 export function pathToString(p: FieldPath): string {
   return p.join('.');
 }
+
+export interface Change {
+  path: FieldPath;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+/**
+ * Recursively diff two config dicts. Yields one Change per primitive/array
+ * leaf that differs, plus one for nested objects that exist on only one side.
+ */
+export function findChanges(
+  before: unknown,
+  after: unknown,
+  prefix: FieldPath = [],
+): Change[] {
+  if (isPlainObject(before) && isPlainObject(after)) {
+    const keys = new Set([
+      ...Object.keys(before as Record<string, unknown>),
+      ...Object.keys(after as Record<string, unknown>),
+    ]);
+    const out: Change[] = [];
+    for (const k of keys) {
+      out.push(
+        ...findChanges(
+          (before as Record<string, unknown>)[k],
+          (after  as Record<string, unknown>)[k],
+          [...prefix, k],
+        ),
+      );
+    }
+    return out;
+  }
+  if (jsonEqual(before, after)) return [];
+  return [{ path: prefix, oldValue: before, newValue: after }];
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v != null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function jsonEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}

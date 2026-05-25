@@ -14,21 +14,34 @@ import { getPath, pathToString } from './types';
 interface FieldRendererProps {
   field: Field;
   config: unknown;
+  /** Reference defaults (base_config). Used to detect modified state and to reset per-field. */
+  defaults?: unknown;
   errors: Record<string, string[]>;
   onChange: (path: FieldPath, value: unknown) => void;
   disabled?: boolean;
 }
 
-export function FieldRenderer({ field, config, errors, onChange, disabled }: FieldRendererProps) {
+export function FieldRenderer({ field, config, defaults, errors, onChange, disabled }: FieldRendererProps) {
   const key = pathToString(field.path);
   const err = errors[key];
   const id = useId();
   const value = getPath(config, field.path);
+  const defaultValue = defaults === undefined ? undefined : getPath(defaults, field.path);
+  const hasDefault = defaults !== undefined && defaultValue !== undefined;
+  const isModified = hasDefault && !jsonEqualLoose(value, defaultValue);
 
   const label = (
-    <label htmlFor={id} className="text-[11px] uppercase tracking-wider text-ink-dim">
-      {field.label}
-    </label>
+    <div className="flex items-center justify-between gap-2">
+      <label htmlFor={id} className="text-[11px] uppercase tracking-wider text-ink-dim">
+        {field.label}
+      </label>
+      {isModified && !disabled && !field.readonly && (
+        <ResetButton
+          defaultValue={defaultValue}
+          onClick={() => onChange(field.path, defaultValue)}
+        />
+      )}
+    </div>
   );
 
   const helpAndError = (
@@ -261,10 +274,11 @@ function SelectInput({
 // ── group + section ───────────────────────────────────────────────────────
 
 export function GroupSection({
-  group, config, errors, onChange, disabled,
+  group, config, defaults, errors, onChange, disabled,
 }: {
   group: FieldGroup;
   config: unknown;
+  defaults?: unknown;
   errors: Record<string, string[]>;
   onChange: (path: FieldPath, value: unknown) => void;
   disabled?: boolean;
@@ -283,6 +297,7 @@ export function GroupSection({
             key={pathToString(f.path)}
             field={f}
             config={config}
+            defaults={defaults}
             errors={errors}
             onChange={onChange}
             disabled={disabled}
@@ -291,4 +306,39 @@ export function GroupSection({
       </div>
     </section>
   );
+}
+
+function ResetButton({ defaultValue, onClick }: { defaultValue: unknown; onClick: () => void }) {
+  const preview = formatDefaultPreview(defaultValue);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={preview ? `Reset to default: ${preview}` : 'Reset to default'}
+      className="text-[10px] text-ink-dim hover:text-info flex items-center gap-0.5 transition-colors"
+    >
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="1 4 1 10 7 10" />
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+      </svg>
+      reset
+    </button>
+  );
+}
+
+function formatDefaultPreview(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (typeof v === 'string') return v.length > 30 ? v.slice(0, 30) + '…' : v;
+  if (typeof v === 'number') return String(v);
+  return '';
+}
+
+function jsonEqualLoose(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null && b == null) return true;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+  return JSON.stringify(a) === JSON.stringify(b);
 }

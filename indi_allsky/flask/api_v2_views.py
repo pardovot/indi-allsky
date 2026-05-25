@@ -1721,10 +1721,28 @@ def config_get():
         }
 
     return jsonify({
-        'config'    : cfg_obj.config,
-        'config_id' : cfg_obj.config_id,
-        'camera'    : cam_ctx,
+        'config'      : cfg_obj.config,
+        'base_config' : cfg_obj.base_config,
+        'config_id'   : cfg_obj.config_id,
+        'camera'      : cam_ctx,
     })
+
+
+def _config_deep_merge(base, override):
+    """Recursive merge: keys present in `override` win; nested dicts merge by key.
+    Lists and scalars are replaced wholesale by override."""
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return override if override is not None else base
+    out = {}
+    for k in base.keys():
+        if k in override:
+            out[k] = _config_deep_merge(base[k], override[k])
+        else:
+            out[k] = base[k]
+    for k, v in override.items():
+        if k not in base:
+            out[k] = v
+    return out
 
 
 @bp_api_v2.route('/config', methods=['POST'])
@@ -1757,8 +1775,12 @@ def config_save():
     cfg_obj = IndiAllSkyConfig()
     username = jwt_user.username if jwt_user is not None else 'system'
 
+    # Backfill missing keys from base_config so a partial payload (or one that
+    # predates a newer key) doesn't permanently drop those defaults.
+    merged = _config_deep_merge(cfg_obj.base_config, new_config)
+
     try:
-        cfg_obj.config = new_config
+        cfg_obj.config = merged
         entry = cfg_obj.save(username, note)
     except ConfigSaveException as e:
         return jsonify({'form_global': [str(e)]}), 400

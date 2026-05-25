@@ -4,11 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import PageShell from '@/components/PageShell';
 import { GroupSection } from './Fields';
-import { TAB_REGISTRY, setPath, type FieldPath } from './types';
+import { TAB_REGISTRY, findChanges, pathToString, setPath, type Change, type FieldPath } from './types';
 import { tabs as tabSchemas } from './tabs';
 
 interface ConfigResp {
   config: Record<string, unknown>;
+  base_config: Record<string, unknown>;
   config_id: number;
   camera: {
     id: number; name: string;
@@ -79,6 +80,8 @@ function Content() {
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [topError, setTopError] = useState<string[] | null>(null);
+  const [showChanges, setShowChanges] = useState(false);
+  const [confirmResetAll, setConfirmResetAll] = useState(false);
 
   useEffect(() => {
     if (q.data) setDraft(q.data.config);
@@ -87,10 +90,11 @@ function Content() {
   const activeId = tabId || 'location';
   const reg = TAB_REGISTRY.find((t) => t.id === activeId) ?? TAB_REGISTRY[0];
 
-  const isDirty = useMemo(() => {
-    if (!q.data || !draft) return false;
-    return JSON.stringify(draft) !== JSON.stringify(q.data.config);
+  const changes = useMemo<Change[]>(() => {
+    if (!q.data || !draft) return [];
+    return findChanges(q.data.config, draft);
   }, [draft, q.data]);
+  const isDirty = changes.length > 0;
 
   const save = useMutation({
     mutationFn: (body: { config: Record<string, unknown>; note: string }) =>
@@ -120,11 +124,22 @@ function Content() {
     setSavedMsg(null);
   };
 
-  const reset = () => {
+  const discard = () => {
     if (q.data) setDraft(q.data.config);
     setErrors({});
     setTopError(null);
     setSavedMsg(null);
+    setShowChanges(false);
+    setConfirmResetAll(false);
+  };
+
+  const resetAllToDefaults = () => {
+    if (!q.data) return;
+    setDraft(q.data.base_config);
+    setErrors({});
+    setTopError(null);
+    setSavedMsg(null);
+    setConfirmResetAll(false);
   };
 
   if (q.isLoading) return <div className="text-ink-dim text-sm">Loading…</div>;
@@ -178,6 +193,7 @@ function Content() {
               key={i}
               group={g}
               config={draft ?? {}}
+              defaults={q.data.base_config}
               errors={errors}
               onChange={onChange}
               disabled={!isAdmin || save.isPending}
@@ -188,19 +204,65 @@ function Content() {
         <StubTab label={reg.label} />
       )}
 
-      <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-bg-0/85 backdrop-blur border-t border-edge flex items-center gap-3">
+      {showChanges && isDirty && (
+        <ChangesPanel changes={changes} onClose={() => setShowChanges(false)} onRevert={(p) => onChange(p, getAtPath(q.data!.config, p))} />
+      )}
+
+      <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-bg-0/85 backdrop-blur border-t border-edge flex items-center gap-3 flex-wrap">
         <span className="text-xs text-ink-dim">
           {isDirty
-            ? <span className="text-warn">Unsaved changes</span>
+            ? <span className="text-warn">{changes.length} unsaved change{changes.length === 1 ? '' : 's'}</span>
             : <span>config #{q.data.config_id}</span>}
         </span>
         <div className="flex-1" />
+
+        {isAdmin && (
+          confirmResetAll ? (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-danger">Replace entire config with defaults?</span>
+              <button
+                type="button"
+                onClick={resetAllToDefaults}
+                className="px-2 py-1 rounded bg-danger/15 hover:bg-danger/25 border border-danger/40 text-danger"
+              >Yes, reset all</button>
+              <button
+                type="button"
+                onClick={() => setConfirmResetAll(false)}
+                className="px-2 py-1 rounded bg-bg-2 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink"
+              >Cancel</button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={save.isPending}
+              onClick={() => setConfirmResetAll(true)}
+              title="Replace the draft with all factory defaults"
+              className="px-3 py-1.5 rounded-md bg-bg-2 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            >Reset to defaults</button>
+          )
+        )}
+
         <button
           type="button"
           disabled={!isDirty || save.isPending}
-          onClick={reset}
+          onClick={() => setShowChanges((v) => !v)}
+          className={[
+            'px-3 py-1.5 rounded-md border text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+            showChanges
+              ? 'bg-warn/15 border-warn/40 text-warn'
+              : 'bg-bg-2 hover:bg-bg-3 border-edge text-ink-dim hover:text-ink',
+          ].join(' ')}
+        >
+          {showChanges ? 'Hide changes' : `Show changes${isDirty ? ` (${changes.length})` : ''}`}
+        </button>
+
+        <button
+          type="button"
+          disabled={!isDirty || save.isPending}
+          onClick={discard}
           className="px-3 py-1.5 rounded-md bg-bg-2 hover:bg-bg-3 border border-edge text-ink-dim hover:text-ink text-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >Discard</button>
+
         <button
           type="button"
           disabled={!isAdmin || !isDirty || save.isPending}
@@ -215,6 +277,62 @@ function Content() {
       </div>
     </div>
   );
+}
+
+function getAtPath(obj: unknown, path: FieldPath): unknown {
+  let cur: unknown = obj;
+  for (const k of path) {
+    if (cur == null || typeof cur !== 'object') return undefined;
+    cur = (cur as Record<string | number, unknown>)[k];
+  }
+  return cur;
+}
+
+function ChangesPanel({
+  changes, onClose, onRevert,
+}: {
+  changes: Change[];
+  onClose: () => void;
+  onRevert: (path: FieldPath) => void;
+}) {
+  return (
+    <section className="bg-bg-1 border border-warn/30 rounded-lg overflow-hidden">
+      <header className="flex items-center justify-between px-4 py-2 bg-warn/10 border-b border-warn/30">
+        <h2 className="text-warn text-sm font-medium">
+          Pending changes ({changes.length})
+        </h2>
+        <button
+          onClick={onClose}
+          className="text-ink-dim hover:text-ink text-xs px-1"
+        >Close</button>
+      </header>
+      <ul className="divide-y divide-edge">
+        {changes.map((c) => (
+          <li key={pathToString(c.path)} className="px-4 py-2 flex items-center gap-3 text-xs">
+            <span className="font-mono text-ink-bright flex-shrink-0">{pathToString(c.path)}</span>
+            <span className="text-ink-dim line-through font-mono truncate max-w-[16ch]">{renderValue(c.oldValue)}</span>
+            <span className="text-ink-dim">→</span>
+            <span className="text-warn font-mono truncate max-w-[24ch]">{renderValue(c.newValue)}</span>
+            <div className="flex-1" />
+            <button
+              onClick={() => onRevert(c.path)}
+              className="text-ink-dim hover:text-info text-[10px] uppercase tracking-wider"
+              title="Revert this field to its saved value"
+            >revert</button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function renderValue(v: unknown): string {
+  if (v === undefined) return '∅';
+  if (v === null) return 'null';
+  if (typeof v === 'string') return v === '' ? '""' : v;
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
 }
 
 function StubTab({ label }: { label: string }) {
