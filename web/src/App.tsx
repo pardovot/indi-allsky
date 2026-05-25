@@ -21,6 +21,12 @@ import FileSpaceUsage from './pages/FileSpaceUsage';
 import CameraInfo from './pages/CameraInfo';
 import SupportInfo from './pages/SupportInfo';
 import LogViewer from './pages/LogViewer';
+import AduHistory from './pages/AduHistory';
+import DarkLibrary from './pages/DarkLibrary';
+import DriveManager from './pages/DriveManager';
+import SystemInfo from './pages/SystemInfo';
+import Generate from './pages/Generate';
+import Config from './pages/Config';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -120,6 +126,12 @@ export default function App() {
           <Route path="/camera-info"       element={<ProtectedRoute><CameraInfo /></ProtectedRoute>} />
           <Route path="/support-info"      element={<ProtectedRoute><SupportInfo /></ProtectedRoute>} />
           <Route path="/log"               element={<ProtectedRoute><LogViewer /></ProtectedRoute>} />
+          <Route path="/adu"               element={<ProtectedRoute><AduHistory /></ProtectedRoute>} />
+          <Route path="/darks"             element={<ProtectedRoute><DarkLibrary /></ProtectedRoute>} />
+          <Route path="/drives"            element={<ProtectedRoute><DriveManager /></ProtectedRoute>} />
+          <Route path="/system"            element={<ProtectedRoute><SystemInfo /></ProtectedRoute>} />
+          <Route path="/generate"          element={<ProtectedRoute><Generate /></ProtectedRoute>} />
+          <Route path="/config"            element={<ProtectedRoute><Config /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
