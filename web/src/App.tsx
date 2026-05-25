@@ -26,6 +26,11 @@ import DarkLibrary from './pages/DarkLibrary';
 import DriveManager from './pages/DriveManager';
 import SystemInfo from './pages/SystemInfo';
 import Generate from './pages/Generate';
+import Users from './pages/Users';
+import Cameras from './pages/Cameras';
+import Notifications from './pages/Notifications';
+import TaskQueue from './pages/TaskQueue';
+import ConfigHistory from './pages/ConfigHistory';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -130,6 +135,11 @@ export default function App() {
           <Route path="/drives"            element={<ProtectedRoute><DriveManager /></ProtectedRoute>} />
           <Route path="/system"            element={<ProtectedRoute><SystemInfo /></ProtectedRoute>} />
           <Route path="/generate"          element={<ProtectedRoute><Generate /></ProtectedRoute>} />
+          <Route path="/users"             element={<ProtectedRoute><Users /></ProtectedRoute>} />
+          <Route path="/cameras-admin"     element={<ProtectedRoute><Cameras /></ProtectedRoute>} />
+          <Route path="/notifications"     element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+          <Route path="/taskqueue"         element={<ProtectedRoute><TaskQueue /></ProtectedRoute>} />
+          <Route path="/config-history"    element={<ProtectedRoute><ConfigHistory /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

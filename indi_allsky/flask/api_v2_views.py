@@ -1376,3 +1376,184 @@ def notifications_ack():
         pass
 
     return view.get(camera_id=camera_id)
+
+
+# ─── Phase 1: Admin pages ─────────────────────────────────────────────────
+
+@bp_api_v2.route('/users', methods=['GET'])
+@jwt_required()
+def users_list():
+    rows = IndiAllSkyDbUserTable.query\
+        .order_by(IndiAllSkyDbUserTable.createDate.asc())\
+        .all()
+    return jsonify([
+        {
+            'id'         : u.id,
+            'username'   : u.username,
+            'name'       : u.name,
+            'email'      : u.email,
+            'createDate' : u.createDate.isoformat() if u.createDate else None,
+            'active'     : bool(u.active),
+            'staff'      : bool(u.staff),
+            'admin'      : bool(u.admin),
+        }
+        for u in rows
+    ])
+
+
+@bp_api_v2.route('/cameras-list', methods=['GET'])
+@jwt_required()
+def cameras_admin_list():
+    rows = IndiAllSkyDbCameraTable.query\
+        .order_by(IndiAllSkyDbCameraTable.id.desc())\
+        .all()
+    return jsonify([
+        {
+            'id'           : c.id,
+            'name'         : c.name,
+            'connectDate'  : c.connectDate.isoformat() if c.connectDate else None,
+            'width'        : int(c.width or 0),
+            'height'       : int(c.height or 0),
+            'pixelSize'    : float(c.pixelSize or 0),
+            'bits'         : int(c.bits or 0),
+            'minGain'      : float(c.minGain or 0),
+            'maxGain'      : float(c.maxGain or 0),
+            'minBinning'   : c.minBinning,
+            'maxBinning'   : c.maxBinning,
+            'minExposure'  : float(c.minExposure or 0),
+            'maxExposure'  : float(c.maxExposure or 0),
+        }
+        for c in rows
+    ])
+
+
+@bp_api_v2.route('/notifications/history', methods=['GET'])
+@jwt_required()
+def notifications_history():
+    from .models import IndiAllSkyDbNotificationTable
+    notices = IndiAllSkyDbNotificationTable.query\
+        .order_by(IndiAllSkyDbNotificationTable.createDate.desc())\
+        .limit(50)\
+        .all()
+    return jsonify([
+        {
+            'id'           : n.id,
+            'createDate'   : n.createDate.isoformat() if n.createDate else None,
+            'expireDate'   : n.expireDate.isoformat() if n.expireDate else None,
+            'category'     : n.category.value,
+            'ack'          : bool(n.ack),
+            'notification' : n.notification,
+        }
+        for n in notices
+    ])
+
+
+@bp_api_v2.route('/tasks', methods=['GET'])
+@jwt_required()
+def tasks_list():
+    from datetime import timedelta
+    from sqlalchemy import and_ as _and
+    from .models import (
+        IndiAllSkyDbTaskQueueTable,
+        TaskQueueState,
+        TaskQueueQueue,
+    )
+
+    state_list = (
+        TaskQueueState.MANUAL,
+        TaskQueueState.QUEUED,
+        TaskQueueState.RUNNING,
+        TaskQueueState.SUCCESS,
+        TaskQueueState.FAILED,
+    )
+    exclude_queues = (TaskQueueQueue.IMAGE, TaskQueueQueue.UPLOAD)
+
+    now_minus_3d = datetime.now() - timedelta(days=3)
+    tasks = IndiAllSkyDbTaskQueueTable.query\
+        .filter(
+            _and(
+                IndiAllSkyDbTaskQueueTable.createDate > now_minus_3d,
+                IndiAllSkyDbTaskQueueTable.state.in_(state_list),
+                ~IndiAllSkyDbTaskQueueTable.queue.in_(exclude_queues),
+            )
+        )\
+        .order_by(IndiAllSkyDbTaskQueueTable.createDate.desc())\
+        .all()
+
+    return jsonify([
+        {
+            'id'         : t.id,
+            'createDate' : t.createDate.isoformat() if t.createDate else None,
+            'queue'      : t.queue.name,
+            'state'      : t.state.name,
+            'action'     : (t.data or {}).get('action', 'MISSING'),
+            'result'     : t.result,
+        }
+        for t in tasks
+    ])
+
+
+@bp_api_v2.route('/config-history', methods=['GET'])
+@jwt_required()
+def config_history():
+    from .models import IndiAllSkyDbConfigTable
+    rows = db.session.query(
+            IndiAllSkyDbConfigTable.id,
+            IndiAllSkyDbConfigTable.createDate,
+            IndiAllSkyDbConfigTable.level,
+            IndiAllSkyDbConfigTable.note,
+            IndiAllSkyDbConfigTable.encrypted,
+            IndiAllSkyDbUserTable.username,
+        )\
+        .join(IndiAllSkyDbUserTable)\
+        .order_by(IndiAllSkyDbConfigTable.createDate.desc())\
+        .limit(25)\
+        .all()
+    return jsonify([
+        {
+            'id'         : r.id,
+            'createDate' : r.createDate.isoformat() if r.createDate else None,
+            'level'      : r.level,
+            'note'       : r.note,
+            'encrypted'  : bool(r.encrypted),
+            'username'   : r.username,
+        }
+        for r in rows
+    ])
+
+
+@bp_api_v2.route('/config-download/<int:config_id>', methods=['GET'])
+@jwt_required()
+def config_download(config_id):
+    """JWT-protected proxy to the legacy ConfigDownloadView."""
+    from .views import ConfigDownloadView
+    # ConfigDownloadView.dispatch_request reads request.args['id'] and 'redact'.
+    # We forward via mutating request.args isn't ideal; instead instantiate and
+    # call the underlying logic by overriding args lookup via query string.
+    # Simpler: re-implement minimal logic here.
+    from .models import IndiAllSkyDbConfigTable
+    import io
+    import json as _json
+    from flask import send_file
+
+    redact = bool(int(request.args.get('redact', 0)))
+    config_entry = IndiAllSkyDbConfigTable.query\
+        .filter(IndiAllSkyDbConfigTable.id == config_id)\
+        .one()
+
+    config = dict(config_entry.data)
+    if redact:
+        view = ConfigDownloadView()
+        config = view.dict_merge(config, view.redact_dict)
+        if 'LOCATION_LATITUDE' in config:
+            config['LOCATION_LATITUDE'] = float(round(config['LOCATION_LATITUDE']))
+        if 'LOCATION_LONGITUDE' in config:
+            config['LOCATION_LONGITUDE'] = float(round(config['LOCATION_LONGITUDE']))
+
+    buf = io.BytesIO(_json.dumps(config, indent=4, ensure_ascii=False).encode())
+    name = 'indi-allsky_config_id-{0:d}_level-{1:s}_{2:%Y%m%d_%H%M%S}.json'.format(
+        config_entry.id,
+        config_entry.level.replace('.', '-'),
+        datetime.now(),
+    )
+    return send_file(buf, mimetype='application/octet-stream', download_name=name, as_attachment=True)

@@ -74,4 +74,14 @@ export const menu: MenuGroup[] = [
       { label: 'System Info',           to: '/system',                   authRequired: true, native: true },
     ],
   },
+  {
+    label: 'Admin',
+    items: [
+      { label: 'Users',          to: '/users',          authRequired: true, native: true },
+      { label: 'Cameras',        to: '/cameras-admin',  authRequired: true, native: true },
+      { label: 'Notifications',  to: '/notifications',  authRequired: true, native: true },
+      { label: 'Task Queue',     to: '/taskqueue',      authRequired: true, native: true },
+      { label: 'Config History', to: '/config-history', authRequired: true, native: true },
+    ],
+  },
 ];
