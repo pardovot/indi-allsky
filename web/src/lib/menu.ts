@@ -82,6 +82,7 @@ export const menu: MenuGroup[] = [
       { label: 'Notifications',  to: '/notifications',  authRequired: true, native: true },
       { label: 'Task Queue',     to: '/taskqueue',      authRequired: true, native: true },
       { label: 'Config History', to: '/config-history', authRequired: true, native: true },
+      { label: 'Config Restore', to: '/config-restore', authRequired: true, native: true },
     ],
   },
 ];

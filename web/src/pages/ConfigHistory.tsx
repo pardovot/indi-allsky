@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import PageShell from '@/components/PageShell';
@@ -11,7 +12,7 @@ interface ConfigEntry {
   level: string;
   note: string | null;
   encrypted: boolean;
-  username: string;
+  username: string | null;
 }
 
 const API_BASE = '/indi-allsky/api/v2';
@@ -55,6 +56,12 @@ function Content() {
         rows={rows}
         rowKey={(r) => r.id}
         defaultSort={{ key: 'createDate', dir: 'desc' }}
+        toolbarRight={
+          <Link
+            to="/config-restore"
+            className="text-[10px] px-1.5 py-0.5 rounded border bg-danger/10 hover:bg-danger/20 border-danger/40 text-danger"
+          >Restore from file</Link>
+        }
         columns={[
           {
             key: 'id',
@@ -71,9 +78,11 @@ function Content() {
           {
             key: 'username',
             label: 'User',
-            render: (r) => <span className="font-mono">{r.username}</span>,
-            sortValue: (r) => r.username.toLowerCase(),
-            searchValue: (r) => r.username,
+            render: (r) => r.username
+              ? <span className="font-mono">{r.username}</span>
+              : <span className="font-mono text-warn italic">&lt;deleted&gt;</span>,
+            sortValue: (r) => (r.username || '￿').toLowerCase(),
+            searchValue: (r) => r.username || '<deleted>',
           },
           {
             key: 'level',

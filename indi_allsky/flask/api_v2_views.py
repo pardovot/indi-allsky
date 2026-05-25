@@ -1401,30 +1401,66 @@ def users_list():
     ])
 
 
+def _camera_admin_dto(c):
+    return {
+        'id'           : c.id,
+        'name'         : c.name,
+        'friendlyName' : c.friendlyName,
+        'hidden'       : bool(c.hidden),
+        'connectDate'  : c.connectDate.isoformat() if c.connectDate else None,
+        'width'        : int(c.width or 0),
+        'height'       : int(c.height or 0),
+        'pixelSize'    : float(c.pixelSize or 0),
+        'bits'         : int(c.bits or 0),
+        'minGain'      : float(c.minGain or 0),
+        'maxGain'      : float(c.maxGain or 0),
+        'minBinning'   : c.minBinning,
+        'maxBinning'   : c.maxBinning,
+        'minExposure'  : float(c.minExposure or 0),
+        'maxExposure'  : float(c.maxExposure or 0),
+    }
+
+
 @bp_api_v2.route('/cameras-list', methods=['GET'])
 @jwt_required()
 def cameras_admin_list():
     rows = IndiAllSkyDbCameraTable.query\
         .order_by(IndiAllSkyDbCameraTable.id.desc())\
         .all()
-    return jsonify([
-        {
-            'id'           : c.id,
-            'name'         : c.name,
-            'connectDate'  : c.connectDate.isoformat() if c.connectDate else None,
-            'width'        : int(c.width or 0),
-            'height'       : int(c.height or 0),
-            'pixelSize'    : float(c.pixelSize or 0),
-            'bits'         : int(c.bits or 0),
-            'minGain'      : float(c.minGain or 0),
-            'maxGain'      : float(c.maxGain or 0),
-            'minBinning'   : c.minBinning,
-            'maxBinning'   : c.maxBinning,
-            'minExposure'  : float(c.minExposure or 0),
-            'maxExposure'  : float(c.maxExposure or 0),
-        }
-        for c in rows
-    ])
+    return jsonify([_camera_admin_dto(c) for c in rows])
+
+
+@bp_api_v2.route('/cameras-list/<int:camera_id>', methods=['PATCH'])
+@jwt_required()
+def cameras_admin_update(camera_id):
+    from sqlalchemy.orm.exc import NoResultFound
+    from flask_jwt_extended import current_user as jwt_user
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'failure-message': 'admin required'}), 403
+
+    data = request.get_json(silent=True) or {}
+    try:
+        cam = IndiAllSkyDbCameraTable.query\
+            .filter(IndiAllSkyDbCameraTable.id == camera_id).one()
+    except NoResultFound:
+        return jsonify({'failure-message': 'Camera not found'}), 404
+
+    if 'friendlyName' in data:
+        v = data['friendlyName']
+        if v is not None and not isinstance(v, str):
+            return jsonify({'failure-message': 'friendlyName must be string or null'}), 400
+        if isinstance(v, str):
+            v = v.strip()
+            if len(v) > 100:
+                return jsonify({'failure-message': 'friendlyName too long (max 100)'}), 400
+            v = v or None
+        cam.friendlyName = v
+
+    if 'hidden' in data:
+        cam.hidden = bool(data['hidden'])
+
+    db.session.commit()
+    return jsonify(_camera_admin_dto(cam))
 
 
 @bp_api_v2.route('/notifications/history', methods=['GET'])
@@ -1496,6 +1532,9 @@ def tasks_list():
 @bp_api_v2.route('/config-history', methods=['GET'])
 @jwt_required()
 def config_history():
+    # LEFT OUTER JOIN so configs whose owner row was deleted still appear
+    # (legacy did INNER JOIN and silently dropped them). Orphans get
+    # username=None which the React side renders as <deleted>.
     from .models import IndiAllSkyDbConfigTable
     rows = db.session.query(
             IndiAllSkyDbConfigTable.id,
@@ -1505,7 +1544,10 @@ def config_history():
             IndiAllSkyDbConfigTable.encrypted,
             IndiAllSkyDbUserTable.username,
         )\
-        .join(IndiAllSkyDbUserTable)\
+        .outerjoin(
+            IndiAllSkyDbUserTable,
+            IndiAllSkyDbConfigTable.user_id == IndiAllSkyDbUserTable.id,
+        )\
         .order_by(IndiAllSkyDbConfigTable.createDate.desc())\
         .limit(25)\
         .all()
@@ -1557,3 +1599,111 @@ def config_download(config_id):
         datetime.now(),
     )
     return send_file(buf, mimetype='application/octet-stream', download_name=name, as_attachment=True)
+
+
+@bp_api_v2.route('/config-restore', methods=['POST'])
+@jwt_required()
+def config_restore():
+    """Restore config from an uploaded JSON file. Admin-only (matches legacy)."""
+    import io
+    import json as _json
+    import tempfile
+    from collections import OrderedDict
+    from pathlib import Path
+
+    from flask_jwt_extended import current_user as jwt_user
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'form_global': ['admin required']}), 403
+
+    upload = request.files.get('CONFIG_UPLOAD')
+    if upload is None or not upload.filename:
+        return jsonify({
+            'form_global': ['Please fix the errors above'],
+            'CONFIG_UPLOAD': ['File required'],
+        }), 400
+
+    flush_configs = _truthy_form(request.form.get('FLUSH_CONFIGS'))
+    reset_keys    = _truthy_form(request.form.get('RESET_KEYS'))
+
+    f_tmp = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.json')
+    f_tmp.close()
+    tmp_p = Path(f_tmp.name)
+    upload.save(str(tmp_p))
+
+    try:
+        size = tmp_p.stat().st_size
+        if size == 0:
+            return jsonify({'form_global': ['Please fix the errors above'], 'CONFIG_UPLOAD': ['File is empty']}), 400
+        if size > 100000:
+            return jsonify({'form_global': ['Please fix the errors above'], 'CONFIG_UPLOAD': ['File too large']}), 400
+
+        try:
+            with io.open(str(tmp_p), 'rb') as f:
+                config_dict = _json.load(f, object_pairs_hook=OrderedDict)
+        except ValueError:
+            return jsonify({'form_global': ['Please fix the errors above'], 'CONFIG_UPLOAD': ['Invalid JSON']}), 400
+    finally:
+        try:
+            tmp_p.unlink()
+        except FileNotFoundError:
+            pass
+
+    # Basic shape check, mirroring AjaxConfigRestoreView
+    if (
+        not isinstance(config_dict.get('INDI_SERVER'), str)
+        or not isinstance(config_dict.get('CCD_CONFIG'), dict)
+        or not isinstance(config_dict.get('INDI_CONFIG_DEFAULTS'), dict)
+    ):
+        return jsonify({'form_global': ['Please fix the errors above'], 'CONFIG_UPLOAD': ['Not a valid indi-allsky config']}), 400
+
+    from ..config import IndiAllSkyConfig
+    from ..exceptions import ConfigSaveException
+    cfg_obj = IndiAllSkyConfig()
+    username = jwt_user.username if jwt_user is not None else 'system'
+
+    try:
+        cfg_obj.config = config_dict
+        cfg_obj.save(username, 'Manual config restore from upload')
+    except ConfigSaveException as e:
+        return jsonify({'form_global': ['Please fix the errors above'], 'CONFIG_UPLOAD': [str(e)]}), 400
+
+    app.logger.info('Restored config from upload (api/v2)')
+
+    if flush_configs:
+        from .models import IndiAllSkyDbConfigTable
+        IndiAllSkyDbConfigTable.query\
+            .filter(IndiAllSkyDbConfigTable.id != cfg_obj.config_id)\
+            .delete()
+        db.session.commit()
+        app.logger.warning('Config entries flushed')
+
+    if reset_keys:
+        import shutil
+        import secrets
+        from cryptography.fernet import Fernet
+
+        flask_config_p = Path('/etc/indi-allsky/flask.json')
+        with io.open(str(flask_config_p), 'rb') as fc_f:
+            flask_config = _json.load(fc_f, object_pairs_hook=OrderedDict)
+
+        flask_config['SECRET_KEY']   = secrets.token_hex()
+        flask_config['PASSWORD_KEY'] = Fernet.generate_key().decode()
+
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', encoding='utf-8') as f_tmp_c:
+            _json.dump(flask_config, f_tmp_c, indent=2, ensure_ascii=False)
+            tmp_fc_p = Path(f_tmp_c.name)
+
+        shutil.copy2(str(tmp_fc_p), str(flask_config_p))
+        tmp_fc_p.unlink()
+        flask_config_p.chmod(0o660)
+
+        app.logger.warning('Reset security keys')
+
+    return jsonify({'success-message': 'Restored Config'})
+
+
+def _truthy_form(v):
+    if v is None:
+        return False
+    s = str(v).strip().lower()
+    return s not in ('', '0', 'false', 'no', 'off')

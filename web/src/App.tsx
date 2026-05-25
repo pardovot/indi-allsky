@@ -31,6 +31,7 @@ import Cameras from './pages/Cameras';
 import Notifications from './pages/Notifications';
 import TaskQueue from './pages/TaskQueue';
 import ConfigHistory from './pages/ConfigHistory';
+import ConfigRestore from './pages/ConfigRestore';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -140,6 +141,7 @@ export default function App() {
           <Route path="/notifications"     element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
           <Route path="/taskqueue"         element={<ProtectedRoute><TaskQueue /></ProtectedRoute>} />
           <Route path="/config-history"    element={<ProtectedRoute><ConfigHistory /></ProtectedRoute>} />
+          <Route path="/config-restore"    element={<ProtectedRoute><ConfigRestore /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
