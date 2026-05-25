@@ -713,42 +713,69 @@ def adu():
 @bp_api_v2.route('/darks', methods=['GET'])
 @jwt_required()
 def darks():
-    """Dark frame + bad pixel map listings. Wraps DarkFramesView."""
-    from .views import DarkFramesView
-    camera_id = int(request.args.get('camera_id', 0))
-    if camera_id:
-        _set_session_camera(camera_id)
-    v = DarkFramesView(template_name='unused')
-    ctx = v.get_context()
+    """Dark frame + bad pixel map listings. Queries DB directly because the
+    legacy DarkFramesView has a NameError on bpm-only camera setups (re-uses a
+    loop var from an empty prior loop) and assumes .data is non-None."""
+    from .models import (
+        IndiAllSkyDbDarkFrameTable,
+        IndiAllSkyDbBadPixelMapTable,
+        IndiAllSkyDbCameraTable,
+    )
 
-    def _fmt(entries):
-        out = []
-        for e in entries:
-            created = e.get('createDate')
-            out.append({
-                'id'         : e.get('id'),
-                'camera_name': e.get('camera_name'),
-                'createDate' : created.strftime('%Y-%m-%d %H:%M:%S') if created else '',
-                'active'     : bool(e.get('active')),
-                'bitdepth'   : e.get('bitdepth'),
-                'gain'       : e.get('gain'),
-                'exposure'   : e.get('exposure'),
-                'binmode'    : e.get('binmode'),
-                'width'      : e.get('width'),
-                'height'     : e.get('height'),
-                'temp'       : e.get('temp'),
-                'adu'        : e.get('adu'),
-                'filename'   : e.get('filename'),
-                'url'        : e.get('url'),
-                'hot_pixels' : e.get('hot_pixels'),
-                'method'     : e.get('method', ''),
-                'size_mb'    : e.get('size_mb'),
-            })
-        return out
+    camera_id = int(request.args.get('camera_id', 0))
+    if not camera_id:
+        return jsonify({'error': 'camera_id required'}), 400
+
+    def _row(entry):
+        try:
+            fp = entry.getFilesystemPath()
+            file_size = fp.stat().st_size
+        except (OSError, ValueError):
+            file_size = 0
+        try:
+            url = str(entry.getUrl())
+        except (ValueError, AttributeError):
+            url = None
+        data = entry.data if isinstance(entry.data, dict) else {}
+        return {
+            'id'         : entry.id,
+            'camera_name': entry.camera.name if entry.camera else None,
+            'createDate' : entry.createDate.strftime('%Y-%m-%d %H:%M:%S') if entry.createDate else '',
+            'active'     : bool(entry.active),
+            'bitdepth'   : entry.bitdepth,
+            'gain'       : entry.gain,
+            'exposure'   : entry.exposure,
+            'binmode'    : entry.binmode,
+            'width'      : entry.width,
+            'height'     : entry.height,
+            'temp'       : entry.temp,
+            'adu'        : entry.adu,
+            'filename'   : entry.filename,
+            'url'        : url,
+            'hot_pixels' : data.get('hot_pixels', -1),
+            'method'     : data.get('method', ''),
+            'size_mb'    : file_size / 1024 / 1024,
+        }
+
+    darks_q = IndiAllSkyDbDarkFrameTable.query\
+        .join(IndiAllSkyDbCameraTable)\
+        .filter(IndiAllSkyDbCameraTable.id == camera_id)\
+        .order_by(
+            IndiAllSkyDbDarkFrameTable.gain.asc(),
+            IndiAllSkyDbDarkFrameTable.exposure.asc(),
+        )
+
+    bpm_q = IndiAllSkyDbBadPixelMapTable.query\
+        .join(IndiAllSkyDbCameraTable)\
+        .filter(IndiAllSkyDbCameraTable.id == camera_id)\
+        .order_by(
+            IndiAllSkyDbBadPixelMapTable.gain.asc(),
+            IndiAllSkyDbBadPixelMapTable.exposure.asc(),
+        )
 
     return jsonify({
-        'darks': _fmt(ctx.get('darkframe_list', [])),
-        'bpm'  : _fmt(ctx.get('bpm_list', [])),
+        'darks': [_row(e) for e in darks_q],
+        'bpm'  : [_row(e) for e in bpm_q],
     })
 
 
@@ -824,99 +851,236 @@ def system_info():
     })
 
 
+_DRIVES_PROTECTED_FS = (
+    '/', '/boot', '/boot/firmware', '/boot/efi',
+    '/var', '/home', '/tmp', '/var/tmp',
+    '/run', '/dev', '/dev/shm',
+)
+
+
+def _drives_decode_bytes(seq):
+    """UDisks2 returns NUL-terminated byte arrays (dbus.Array of Byte). Decode."""
+    try:
+        return bytes(seq).rstrip(b'\x00').decode('utf-8', 'replace')
+    except Exception:
+        return str(seq)
+
+
+def _drives_collect():
+    """Walk UDisks2 dbus and build a list of drives + their block devices."""
+    import dbus as _dbus
+
+    try:
+        bus = _dbus.SystemBus()
+        udisks_root = bus.get_object('org.freedesktop.UDisks2', '/org/freedesktop/UDisks2')
+        iface = _dbus.Interface(udisks_root, 'org.freedesktop.DBus.ObjectManager')
+        object_paths = iface.GetManagedObjects()
+    except _dbus.exceptions.DBusException as e:
+        app.logger.error('drives dbus exception: %s', str(e))
+        return []
+
+    drive_map = {}
+    for op, ifaces in object_paths.items():
+        op_s = str(op)
+        if not op_s.startswith('/org/freedesktop/UDisks2/drives/'):
+            continue
+        drv = ifaces.get('org.freedesktop.UDisks2.Drive', {})
+        drv_id = str(drv.get('Id', ''))
+        if not drv_id:
+            continue
+        drive_map[op_s] = {
+            'id'           : drv_id,
+            'vendor'       : str(drv.get('Vendor', '')) or '[no vendor]',
+            'model'        : str(drv.get('Model', '')),
+            'size'         : int(drv.get('Size', 0)),
+            'connection_bus': str(drv.get('ConnectionBus', '')) or '[internal]',
+            'serial'       : str(drv.get('Serial', '')),
+            'removable'    : bool(drv.get('Removable', False)),
+            'ejectable'    : bool(drv.get('Ejectable', False)),
+            'can_power_off': bool(drv.get('CanPowerOff', False)),
+            'media'        : str(drv.get('Media', '')),
+            'block_devices': [],
+        }
+
+    for op, ifaces in object_paths.items():
+        op_s = str(op)
+        if not op_s.startswith('/org/freedesktop/UDisks2/block_devices/'):
+            continue
+        blk = ifaces.get('org.freedesktop.UDisks2.Block', {})
+        fs = ifaces.get('org.freedesktop.UDisks2.Filesystem')  # may be None
+        drive_path = str(blk.get('Drive', ''))
+        parent = drive_map.get(drive_path)
+        if not parent:
+            continue
+
+        # Device name from /dev/... or fallback to dbus path tail.
+        dev_bytes = blk.get('Device')
+        if dev_bytes is not None:
+            device = _drives_decode_bytes(dev_bytes)
+        else:
+            device = op_s.rsplit('/', 1)[-1]
+
+        # UDisks2 Block 'Id' is the stable identifier used by the legacy
+        # mount/unmount RPC. Without it actions can't target the device.
+        block_id = str(blk.get('Id', '') or '')
+
+        mounts = []
+        protected_mount = False
+        is_partition = ('org.freedesktop.UDisks2.Partition' in ifaces) or bool(blk.get('IdUsage') == 'filesystem')
+
+        if fs:
+            for m in fs.get('MountPoints', []):
+                mp = _drives_decode_bytes(m)
+                mounts.append(mp)
+                if mp in _DRIVES_PROTECTED_FS:
+                    protected_mount = True
+
+        parent['block_devices'].append({
+            'device'    : device,
+            'block_id'  : block_id,
+            'mounts'    : mounts,
+            'label'     : str(blk.get('IdLabel', '') or ''),
+            'fstype'    : str(blk.get('IdType', '') or ''),
+            'size'      : int(blk.get('Size', 0) or 0),
+            'mountable' : fs is not None,
+            'protected' : protected_mount,
+            'is_partition': is_partition,
+        })
+
+    drives = list(drive_map.values())
+    # sort: removable/poweroff-capable first, then by id
+    drives.sort(key=lambda d: (not d['can_power_off'], d['id']))
+    for d in drives:
+        d['block_devices'].sort(key=lambda b: b['device'])
+    return drives
+
+
 @bp_api_v2.route('/drives', methods=['GET'])
 @jwt_required()
 def drives_list():
-    """List drives via udisks2. Wraps DriveManagerView for env check."""
-    from .views import DriveManagerView
-    v = DriveManagerView(template_name='unused')
-    ctx = v.get_context()
-    udisks2 = bool(ctx.get('udisks2_installed'))
-
-    drives_data = []
-    if udisks2:
+    try:
         import dbus as _dbus
-        try:
-            bus = _dbus.SystemBus()
-            udisks_root = bus.get_object('org.freedesktop.UDisks2', '/org/freedesktop/UDisks2')
-            iface = _dbus.Interface(udisks_root, 'org.freedesktop.DBus.ObjectManager')
-            object_paths = iface.GetManagedObjects()
+        bus = _dbus.SystemBus()
+        bus.get_object('org.freedesktop.UDisks2', '/org/freedesktop/UDisks2')
+        udisks2 = True
+    except Exception as e:
+        app.logger.error('UDisks2 unavailable: %s', str(e))
+        udisks2 = False
 
-            drive_map = {}
-            for op, ifaces in object_paths.items():
-                op_s = str(op)
-                if not op_s.startswith('/org/freedesktop/UDisks2/drives/'):
-                    continue
-                drv = ifaces.get('org.freedesktop.UDisks2.Drive', {})
-                drv_id = str(drv.get('Id', ''))
-                if not drv_id:
-                    continue
-                drive_map[op_s] = {
-                    'id'      : drv_id,
-                    'vendor'  : str(drv.get('Vendor', '')),
-                    'model'   : str(drv.get('Model', '')),
-                    'size'    : int(drv.get('Size', 0)),
-                    'connection_bus': str(drv.get('ConnectionBus', '')),
-                    'serial'  : str(drv.get('Serial', '')),
-                    'removable': bool(drv.get('Removable', False)),
-                    'ejectable': bool(drv.get('Ejectable', False)),
-                    'can_power_off': bool(drv.get('CanPowerOff', False)),
-                    'block_devices': [],
-                }
+    drives = _drives_collect() if udisks2 else []
+    return jsonify({
+        'udisks2': udisks2,
+        'drives' : drives,
+        'protected_filesystems': list(_DRIVES_PROTECTED_FS),
+    })
 
-            for op, ifaces in object_paths.items():
-                op_s = str(op)
-                if not op_s.startswith('/org/freedesktop/UDisks2/block_devices/'):
-                    continue
-                blk = ifaces.get('org.freedesktop.UDisks2.Block', {})
-                fs = ifaces.get('org.freedesktop.UDisks2.Filesystem', {})
-                drive_path = str(blk.get('Drive', ''))
-                parent = drive_map.get(drive_path)
-                if not parent:
-                    continue
-                mounts = fs.get('MountPoints', []) if fs else []
-                mount_strs = []
-                for m in mounts:
-                    try:
-                        mount_strs.append(bytes(m).rstrip(b'\x00').decode('utf-8', 'replace'))
-                    except Exception:
-                        mount_strs.append(str(m))
-                parent['block_devices'].append({
-                    'device' : op_s.rsplit('/', 1)[-1],
-                    'mounts' : mount_strs,
-                    'label'  : str(blk.get('IdLabel', '') or ''),
-                    'fstype' : str(blk.get('IdType', '') or ''),
-                    'size'   : int(blk.get('Size', 0) or 0),
-                })
 
-            drives_data = list(drive_map.values())
-        except Exception as e:
-            app.logger.error('drives_list error: %s', str(e))
-
-    return jsonify({'udisks2': udisks2, 'drives': drives_data})
+def _drives_resolve_device_settings(query_device_id):
+    """Locate a (settings_object, object_info) tuple for a Block.Id."""
+    import dbus as _dbus
+    bus = _dbus.SystemBus()
+    udisks_root = bus.get_object('org.freedesktop.UDisks2', '/org/freedesktop/UDisks2')
+    iface = _dbus.Interface(udisks_root, 'org.freedesktop.DBus.ObjectManager')
+    objects = iface.GetManagedObjects()
+    for op, info in objects.items():
+        op_s = str(op)
+        if not op_s.startswith('/org/freedesktop/UDisks2/block_devices/'):
+            continue
+        blk = info.get('org.freedesktop.UDisks2.Block', {})
+        if str(blk.get('Id', '')) != query_device_id:
+            continue
+        return bus.get_object('org.freedesktop.UDisks2', op_s), info
+    return None, None
 
 
 @bp_api_v2.route('/drives/action', methods=['POST'])
 @jwt_required()
 def drives_action():
+    """Self-contained drive control: mount/unmount/poweroff.
+    Re-implements AjaxDriveManagerView locally to avoid Flask-Login coupling and
+    legacy FlaskForm CSRF dependencies."""
     from flask_jwt_extended import current_user as jwt_user
     if jwt_user is None or not getattr(jwt_user, 'admin', False):
         return jsonify({'failure-message': 'admin required'}), 403
-    from flask import g as _g
-    from .views import AjaxDriveManagerView
-    _g._login_user = jwt_user
-    return AjaxDriveManagerView().dispatch_request()
+
+    import dbus as _dbus
+    data = request.get_json(silent=True) or {}
+    command = str(data.get('COMMAND', ''))
+
+    if command == 'mount' or command == 'unmount':
+        device_id = str(data.get('DEVICE_ID', ''))
+        if not device_id:
+            return jsonify({'failure-message': 'DEVICE_ID required'}), 400
+        settings, info = _drives_resolve_device_settings(device_id)
+        if not settings:
+            return jsonify({'failure-message': 'Device not found'}), 404
+        fs_info = info.get('org.freedesktop.UDisks2.Filesystem')
+        if fs_info is None:
+            return jsonify({'failure-message': 'Not a filesystem device'}), 400
+
+        mounts = fs_info.get('MountPoints', [])
+        if command == 'unmount':
+            if not mounts:
+                return jsonify({'failure-message': 'Filesystem not mounted'}), 400
+            mp0 = _drives_decode_bytes(mounts[0])
+            if mp0 in _DRIVES_PROTECTED_FS:
+                return jsonify({'failure-message': 'Not allowed to unmount protected filesystem: {0}'.format(mp0)}), 400
+            try:
+                _dbus.Interface(settings, 'org.freedesktop.UDisks2.Filesystem').Unmount({})
+            except _dbus.exceptions.DBusException as e:
+                return jsonify({'failure-message': str(e)}), 400
+            return jsonify({'success-message': 'Unmount successful'})
+        else:  # mount
+            if mounts:
+                return jsonify({'failure-message': 'Filesystem already mounted'}), 400
+            try:
+                _dbus.Interface(settings, 'org.freedesktop.UDisks2.Filesystem').Mount({})
+            except _dbus.exceptions.DBusException as e:
+                return jsonify({'failure-message': str(e)}), 400
+            return jsonify({'success-message': 'Mount successful'})
+
+    if command == 'poweroff':
+        drive_id = str(data.get('DRIVE_ID', ''))
+        if not drive_id:
+            return jsonify({'failure-message': 'DRIVE_ID required'}), 400
+        bus = _dbus.SystemBus()
+        udisks_root = bus.get_object('org.freedesktop.UDisks2', '/org/freedesktop/UDisks2')
+        iface = _dbus.Interface(udisks_root, 'org.freedesktop.DBus.ObjectManager')
+        for op, info in iface.GetManagedObjects().items():
+            op_s = str(op)
+            if not op_s.startswith('/org/freedesktop/UDisks2/drives/'):
+                continue
+            drv = info.get('org.freedesktop.UDisks2.Drive', {})
+            if str(drv.get('Id', '')) != drive_id:
+                continue
+            if not bool(drv.get('CanPowerOff', False)):
+                return jsonify({'failure-message': 'Drive cannot be powered off'}), 400
+            try:
+                _dbus.Interface(bus.get_object('org.freedesktop.UDisks2', op_s), 'org.freedesktop.UDisks2.Drive').PowerOff({})
+            except _dbus.exceptions.DBusException as e:
+                return jsonify({'failure-message': str(e)}), 400
+            return jsonify({'success-message': 'Power off successful'})
+        return jsonify({'failure-message': 'Drive not found'}), 404
+
+    return jsonify({'failure-message': 'Unknown command'}), 400
 
 
 @bp_api_v2.route('/generate/days', methods=['GET'])
 @jwt_required()
 def generate_days():
-    """Return distinct days+ToD entries with timelapse/keogram/panorama status flags."""
+    """Return distinct days+ToD entries with timelapse/keogram/panorama flags.
+    Reuses the legacy form's getDistinctDays; meta={'csrf':False} avoids the
+    FlaskForm CSRF gate (JWT is the auth layer for /api/v2)."""
     from .forms import IndiAllskyTimelapseGeneratorForm
     camera_id = int(request.args.get('camera_id', 0))
     if not camera_id:
         return jsonify({'error': 'camera_id required'}), 400
-    form = IndiAllskyTimelapseGeneratorForm(data={'CAMERA_ID': camera_id}, camera_id=camera_id)
+    form = IndiAllskyTimelapseGeneratorForm(
+        formdata=None,
+        data={'CAMERA_ID': camera_id},
+        camera_id=camera_id,
+        meta={'csrf': False},
+    )
     return jsonify({
         'days': [{'value': v, 'label': l} for v, l in form.DAY_SELECT.choices],
     })
@@ -925,40 +1089,231 @@ def generate_days():
 @bp_api_v2.route('/generate/recent-tasks', methods=['GET'])
 @jwt_required()
 def generate_recent_tasks():
-    from .views import TimelapseGeneratorView
+    """Recent VIDEO-queue tasks (last 12h). Queries DB directly (the legacy
+    TemplateView path drags in camera setup and is slow)."""
+    from datetime import timedelta
+    from .models import (
+        IndiAllSkyDbTaskQueueTable, TaskQueueQueue, TaskQueueState,
+    )
+    from .base_views import BaseView
+    from sqlalchemy import and_
+
     camera_id = int(request.args.get('camera_id', 0))
-    if camera_id:
-        _set_session_camera(camera_id)
-    v = TimelapseGeneratorView(template_name='unused')
-    ctx = v.get_context()
+    if not camera_id:
+        return jsonify({'error': 'camera_id required'}), 400
+    base = BaseView()
+    base.cameraSetup(camera_id=camera_id)
+
+    cutoff = base.camera_now - timedelta(hours=12)
+    rows = IndiAllSkyDbTaskQueueTable.query.filter(
+        and_(
+            IndiAllSkyDbTaskQueueTable.createDate > cutoff,
+            IndiAllSkyDbTaskQueueTable.state.in_((
+                TaskQueueState.MANUAL, TaskQueueState.QUEUED, TaskQueueState.RUNNING,
+                TaskQueueState.SUCCESS, TaskQueueState.FAILED,
+            )),
+            IndiAllSkyDbTaskQueueTable.queue.in_((TaskQueueQueue.VIDEO,)),
+        )
+    ).order_by(IndiAllSkyDbTaskQueueTable.createDate.desc())
+
     tasks = []
-    for t in ctx.get('task_list', []):
-        created = t.get('createDate')
+    for t in rows:
+        data = t.data or {}
         tasks.append({
-            'id'         : t.get('id'),
-            'createDate' : created.strftime('%Y-%m-%d %H:%M:%S') if created else '',
-            'queue'      : t.get('queue'),
-            'action'     : t.get('action'),
-            'state'      : t.get('state'),
-            'result'     : t.get('result'),
+            'id'         : t.id,
+            'createDate' : t.createDate.strftime('%Y-%m-%d %H:%M:%S') if t.createDate else '',
+            'queue'      : t.queue.name,
+            'action'     : data.get('action', 'MISSING'),
+            'state'      : t.state.name,
+            'result'     : t.result,
         })
     return jsonify({'tasks': tasks})
+
+
+_GENERATE_ACTIONS = {
+    'generate_video_k_st', 'generate_video', 'generate_k_st', 'generate_panorama_video',
+    'delete_video_k_st_p', 'delete_video', 'delete_k_st', 'delete_panorama_video',
+    'upload_endofnight', 'delete_images',
+}
 
 
 @bp_api_v2.route('/generate/submit', methods=['POST'])
 @jwt_required()
 def generate_submit():
+    """Self-contained re-implementation of AjaxTimelapseGeneratorView.
+    JWT-authed; admin-only; bypasses FlaskForm CSRF + Flask-Login coupling."""
+    from datetime import datetime as _dt
+    from sqlalchemy import and_
     from flask_jwt_extended import current_user as jwt_user
+    from .models import (
+        IndiAllSkyDbCameraTable, IndiAllSkyDbImageTable, IndiAllSkyDbPanoramaImageTable,
+        IndiAllSkyDbVideoTable, IndiAllSkyDbKeogramTable, IndiAllSkyDbStarTrailsTable,
+        IndiAllSkyDbStarTrailsVideoTable, IndiAllSkyDbPanoramaVideoTable,
+        IndiAllSkyDbTaskQueueTable, TaskQueueQueue, TaskQueueState,
+    )
+    from .base_views import BaseView
+
     if jwt_user is None or not getattr(jwt_user, 'admin', False):
-        return jsonify({'failure-message': 'admin required'}), 403
-    # flask-login's current_user resolves from flask.g._login_user first
-    # (see flask_login.utils._get_user). Set it for the duration of this
-    # request so the legacy AjaxTimelapseGeneratorView.dispatch_request sees
-    # an admin user — without modifying the legacy view or touching the session.
-    from flask import g as _g
-    from .views import AjaxTimelapseGeneratorView
-    _g._login_user = jwt_user
-    return AjaxTimelapseGeneratorView().dispatch_request()
+        return jsonify({'form_global': ['User does not have permission to generate content']}), 403
+
+    data = request.get_json(silent=True) or {}
+    try:
+        camera_id = int(data['CAMERA_ID'])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'form_global': ['camera id required']}), 400
+
+    action = str(data.get('ACTION_SELECT', ''))
+    if action not in _GENERATE_ACTIONS:
+        return jsonify({'ACTION_SELECT': ['Invalid action']}), 400
+
+    day_select = str(data.get('DAY_SELECT', ''))
+    if '_' not in day_select:
+        return jsonify({'DAY_SELECT': ['Day required (format YYYY-MM-DD_day|night)']}), 400
+    day_str, night_str = day_select.split('_', 1)
+    try:
+        day_date = _dt.strptime(day_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'DAY_SELECT': ['Invalid date']}), 400
+    night = night_str == 'night'
+
+    base = BaseView()
+    base.cameraSetup(camera_id=camera_id)
+    if not base.verify_admin_network():
+        return jsonify({'form_global': ['Request not from admin network']}), 400
+
+    try:
+        camera = IndiAllSkyDbCameraTable.query.filter(IndiAllSkyDbCameraTable.id == camera_id).one()
+    except Exception:
+        return jsonify({'form_global': ['Camera not found']}), 404
+
+    def _delete_for(table):
+        entry = table.query.join(table.camera).filter(
+            and_(
+                IndiAllSkyDbCameraTable.id == camera.id,
+                table.dayDate == day_date,
+                table.night == night,
+            )
+        ).first()
+        if entry:
+            entry.deleteAsset()
+            db.session.delete(entry)
+            db.session.commit()
+        return entry is not None
+
+    def _enqueue(jobaction):
+        task = IndiAllSkyDbTaskQueueTable(
+            queue=TaskQueueQueue.VIDEO,
+            state=TaskQueueState.MANUAL,
+            priority=100,
+            data={
+                'action': jobaction,
+                'kwargs': {
+                    'timespec' : day_date.strftime('%Y%m%d'),
+                    'night'    : night,
+                    'camera_id': camera.id,
+                },
+            },
+        )
+        db.session.add(task)
+
+    fish2pano = bool((base.indi_allsky_config.get('FISH2PANO', {}) or {}).get('ENABLE'))
+
+    if action == 'delete_video_k_st_p':
+        _delete_for(IndiAllSkyDbVideoTable)
+        _delete_for(IndiAllSkyDbKeogramTable)
+        _delete_for(IndiAllSkyDbStarTrailsTable)
+        _delete_for(IndiAllSkyDbStarTrailsVideoTable)
+        _delete_for(IndiAllSkyDbPanoramaVideoTable)
+        return jsonify({'success-message': 'Files deleted'})
+
+    if action == 'delete_video':
+        _delete_for(IndiAllSkyDbVideoTable)
+        return jsonify({'success-message': 'Timelapse deleted'})
+
+    if action == 'delete_panorama_video':
+        _delete_for(IndiAllSkyDbPanoramaVideoTable)
+        return jsonify({'success-message': 'Panorama Timelapse deleted'})
+
+    if action == 'delete_k_st':
+        _delete_for(IndiAllSkyDbKeogramTable)
+        _delete_for(IndiAllSkyDbStarTrailsTable)
+        _delete_for(IndiAllSkyDbStarTrailsVideoTable)
+        return jsonify({'success-message': 'Keogram/Star Trails deleted'})
+
+    if action == 'generate_video_k_st':
+        _enqueue('generateKeogramStarTrails')
+        _enqueue('generateVideo')
+        if fish2pano:
+            _enqueue('generatePanoramaVideo')
+        db.session.commit()
+        return jsonify({'success-message': 'Job submitted'})
+
+    if action == 'generate_video':
+        _enqueue('generateVideo')
+        db.session.commit()
+        return jsonify({'success-message': 'Job submitted'})
+
+    if action == 'generate_panorama_video':
+        if not fish2pano:
+            return jsonify({'success-message': 'Panoramas disabled'})
+        _enqueue('generatePanoramaVideo')
+        db.session.commit()
+        return jsonify({'success-message': 'Job submitted'})
+
+    if action == 'generate_k_st':
+        _enqueue('generateKeogramStarTrails')
+        db.session.commit()
+        return jsonify({'success-message': 'Job submitted'})
+
+    if action == 'upload_endofnight':
+        task = IndiAllSkyDbTaskQueueTable(
+            queue=TaskQueueQueue.VIDEO,
+            state=TaskQueueState.MANUAL,
+            priority=100,
+            data={
+                'action': 'uploadAllskyEndOfNight',
+                'kwargs': {'night': True, 'camera_id': camera.id},
+            },
+        )
+        db.session.add(task)
+        db.session.commit()
+        return jsonify({'success-message': 'Job submitted'})
+
+    if action == 'delete_images':
+        image_ids = [r.id for r in IndiAllSkyDbImageTable.query
+                     .join(IndiAllSkyDbImageTable.camera)
+                     .filter(and_(
+                         IndiAllSkyDbCameraTable.id == camera.id,
+                         IndiAllSkyDbImageTable.dayDate == day_date,
+                         IndiAllSkyDbImageTable.night == night,
+                     )).order_by(IndiAllSkyDbImageTable.createDate.asc())]
+        pano_ids = [r.id for r in IndiAllSkyDbPanoramaImageTable.query
+                    .join(IndiAllSkyDbPanoramaImageTable.camera)
+                    .filter(and_(
+                        IndiAllSkyDbCameraTable.id == camera.id,
+                        IndiAllSkyDbPanoramaImageTable.dayDate == day_date,
+                        IndiAllSkyDbPanoramaImageTable.night == night,
+                    )).order_by(IndiAllSkyDbPanoramaImageTable.createDate.asc())]
+
+        def _bulk_delete(table, ids):
+            n = 0
+            for eid in ids:
+                entry = table.query.filter(table.id == eid).one()
+                try:
+                    entry.deleteAsset()
+                except OSError as e:
+                    app.logger.error('Cannot remove file: %s', str(e))
+                    continue
+                db.session.delete(entry)
+                db.session.commit()
+                n += 1
+            return n
+
+        count = _bulk_delete(IndiAllSkyDbImageTable, image_ids)
+        count += _bulk_delete(IndiAllSkyDbPanoramaImageTable, pano_ids)
+        return jsonify({'success-message': '{0:d} images deleted'.format(count)})
+
+    return jsonify({'form_global': ['Invalid']}), 400
 
 
 @bp_api_v2.route('/status', methods=['GET'])
