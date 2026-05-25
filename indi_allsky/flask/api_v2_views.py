@@ -879,6 +879,7 @@ def _drives_collect():
         app.logger.error('drives dbus exception: %s', str(e))
         return []
 
+    from datetime import datetime as _dt
     drive_map = {}
     for op, ifaces in object_paths.items():
         op_s = str(op)
@@ -888,6 +889,23 @@ def _drives_collect():
         drv_id = str(drv.get('Id', ''))
         if not drv_id:
             continue
+
+        # UDisks2 reports TimeDetected / TimeMediaDetected as microseconds since epoch.
+        def _ts(v):
+            try:
+                v = int(v)
+                if v <= 0:
+                    return None
+                return _dt.fromtimestamp(v / 1_000_000).strftime('%Y-%m-%d %H:%M:%S')
+            except (TypeError, ValueError):
+                return None
+
+        media_compat = drv.get('MediaCompatibility', []) or []
+        try:
+            media_compat = [str(x) for x in media_compat]
+        except TypeError:
+            media_compat = []
+
         drive_map[op_s] = {
             'id'           : drv_id,
             'vendor'       : str(drv.get('Vendor', '')) or '[no vendor]',
@@ -899,6 +917,9 @@ def _drives_collect():
             'ejectable'    : bool(drv.get('Ejectable', False)),
             'can_power_off': bool(drv.get('CanPowerOff', False)),
             'media'        : str(drv.get('Media', '')),
+            'media_compatibility': media_compat,
+            'time_detected'      : _ts(drv.get('TimeDetected')),
+            'time_media_detected': _ts(drv.get('TimeMediaDetected')),
             'block_devices': [],
         }
 
