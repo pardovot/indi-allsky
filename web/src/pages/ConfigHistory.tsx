@@ -154,11 +154,8 @@ function DownloadButton({
   );
 }
 
-/**
- * Fetch the config file with the JWT bearer header and trigger a browser
- * download via a Blob URL. The legacy <a href> approach won't work because
- * the access token lives in memory, not in a cookie.
- */
+// Use fetch + Blob URL because the JWT access token lives in memory and can't
+// be sent via a plain <a href> download.
 async function downloadConfig(id: number, redact: boolean): Promise<void> {
   const url = `${API_BASE}/config-download/${id}?redact=${redact ? 1 : 0}`;
   const res = await fetch(url, {

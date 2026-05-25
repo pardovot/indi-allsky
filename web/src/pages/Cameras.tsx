@@ -191,10 +191,6 @@ function Content() {
   );
 }
 
-/**
- * Always-input-styled friendly name cell.
- * Saves on blur or Enter; Esc reverts. Shows a transient ✓ after a successful save.
- */
 function FriendlyNameCell({
   cam, editable, onSave,
 }: { cam: Camera; editable: boolean; onSave: (value: string | null) => void }) {
@@ -202,7 +198,6 @@ function FriendlyNameCell({
   const [savedFlash, setSavedFlash] = useState(false);
   const prevSaved = useRef(cam.friendlyName ?? '');
 
-  // Sync external updates (e.g., after refetch) into local state.
   useEffect(() => {
     setValue(cam.friendlyName ?? '');
     prevSaved.current = cam.friendlyName ?? '';
@@ -274,11 +269,6 @@ function PencilIcon({ className }: { className?: string }) {
   );
 }
 
-/**
- * Toggle that controls whether this camera appears in the topbar selector.
- * Phrased from the user's POV — "Show in selector" with an on/off switch is
- * clearer than a "hidden" badge that doubles as a button.
- */
 function HiddenToggle({
   cam, disabled, onToggle,
 }: { cam: Camera; disabled: boolean; onToggle: (v: boolean) => void }) {

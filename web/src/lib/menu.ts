@@ -1,12 +1,10 @@
-// Menu mirrors original base.html. `to` starting with `/indi-allsky` opens the
-// existing Jinja UI in a new tab (legacy / not yet migrated). `native: true`
-// entries are handled by the React router.
-
 export interface MenuItem {
   label: string;
-  to: string;          // path; if starts with /indi-allsky/ it's external (Jinja)
+  /** Path; if it starts with `/indi-allsky/` it's an external Jinja page opened in a new tab. */
+  to: string;
   authRequired?: boolean;
-  native?: boolean;    // true = handled by React router
+  /** True = routed by the React app; false/undefined = external href. */
+  native?: boolean;
 }
 
 export interface MenuGroup {
@@ -67,7 +65,7 @@ export const menu: MenuGroup[] = [
   {
     label: 'System',
     items: [
-      { label: 'Config (legacy)',       to: '/indi-allsky/config',       authRequired: true },
+      { label: 'Config',                to: '/config',                   authRequired: true, native: true },
       { label: 'Network (legacy)',      to: '/indi-allsky/network',      authRequired: true },
       { label: 'Drives',                to: '/drives',                   authRequired: true, native: true },
       { label: 'GPIO Control (legacy)', to: '/indi-allsky/manual_gpio',  authRequired: true },

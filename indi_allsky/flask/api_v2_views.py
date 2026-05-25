@@ -167,12 +167,8 @@ def imageviewer():
 
 
 def _video_response(form_video_viewer, request_json, has_timeofday):
-    """Build a videoviewer response, auto-populating YEAR_SELECT on initial load.
-
-    The legacy AjaxVideoViewerView.else branch returns an empty MONTH_SELECT
-    when no YEAR_SELECT is sent (it relied on the page template to pre-fill
-    the year). The React UI has no such pre-fill, so we do it here.
-    """
+    """Build a videoviewer response, auto-populating YEAR_SELECT to the latest
+    available year on initial load (when the caller sends none)."""
     form_year      = int(request_json.get('YEAR_SELECT') or 0)
     form_month     = int(request_json.get('MONTH_SELECT') or 0)
     form_timeofday = str(request_json.get('TIMEOFDAY_SELECT', '')) if has_timeofday else ''
@@ -373,8 +369,6 @@ def generate_mini():
     if jwt_user is None or not getattr(jwt_user, 'admin', False):
         return jsonify({'failure-message': 'admin required'}), 403
 
-    # Reuse existing logic — but it checks Flask-Login current_user.is_admin.
-    # We've already authenticated via JWT, so build the task directly here.
     from .models import IndiAllSkyDbImageTable, IndiAllSkyDbCameraTable
     from .models import TaskQueueQueue, TaskQueueState, IndiAllSkyDbTaskQueueTable
     from sqlalchemy.orm.exc import NoResultFound
@@ -713,9 +707,7 @@ def adu():
 @bp_api_v2.route('/darks', methods=['GET'])
 @jwt_required()
 def darks():
-    """Dark frame + bad pixel map listings. Queries DB directly because the
-    legacy DarkFramesView has a NameError on bpm-only camera setups (re-uses a
-    loop var from an empty prior loop) and assumes .data is non-None."""
+    """Dark frame + bad pixel map listings for the given camera."""
     from .models import (
         IndiAllSkyDbDarkFrameTable,
         IndiAllSkyDbBadPixelMapTable,
@@ -941,8 +933,7 @@ def _drives_collect():
         else:
             device = op_s.rsplit('/', 1)[-1]
 
-        # UDisks2 Block 'Id' is the stable identifier used by the legacy
-        # mount/unmount RPC. Without it actions can't target the device.
+        # UDisks2 Block 'Id' is the stable identifier passed back for mount/unmount.
         block_id = str(blk.get('Id', '') or '')
 
         mounts = []
@@ -1017,9 +1008,7 @@ def _drives_resolve_device_settings(query_device_id):
 @bp_api_v2.route('/drives/action', methods=['POST'])
 @jwt_required()
 def drives_action():
-    """Self-contained drive control: mount/unmount/poweroff.
-    Re-implements AjaxDriveManagerView locally to avoid Flask-Login coupling and
-    legacy FlaskForm CSRF dependencies."""
+    """Drive control via UDisks2: mount, unmount, poweroff."""
     from flask_jwt_extended import current_user as jwt_user
     if jwt_user is None or not getattr(jwt_user, 'admin', False):
         return jsonify({'failure-message': 'admin required'}), 403
@@ -1089,9 +1078,8 @@ def drives_action():
 @bp_api_v2.route('/generate/days', methods=['GET'])
 @jwt_required()
 def generate_days():
-    """Return distinct days+ToD entries with timelapse/keogram/panorama flags.
-    Reuses the legacy form's getDistinctDays; meta={'csrf':False} avoids the
-    FlaskForm CSRF gate (JWT is the auth layer for /api/v2)."""
+    """Distinct days+ToD entries with timelapse/keogram/panorama flags."""
+    # meta={'csrf': False} bypasses FlaskForm CSRF; JWT is the auth layer here.
     from .forms import IndiAllskyTimelapseGeneratorForm
     camera_id = int(request.args.get('camera_id', 0))
     if not camera_id:
@@ -1110,8 +1098,7 @@ def generate_days():
 @bp_api_v2.route('/generate/recent-tasks', methods=['GET'])
 @jwt_required()
 def generate_recent_tasks():
-    """Recent VIDEO-queue tasks (last 12h). Queries DB directly (the legacy
-    TemplateView path drags in camera setup and is slow)."""
+    """Recent VIDEO-queue tasks (last 12h)."""
     from datetime import timedelta
     from .models import (
         IndiAllSkyDbTaskQueueTable, TaskQueueQueue, TaskQueueState,
@@ -1161,8 +1148,7 @@ _GENERATE_ACTIONS = {
 @bp_api_v2.route('/generate/submit', methods=['POST'])
 @jwt_required()
 def generate_submit():
-    """Self-contained re-implementation of AjaxTimelapseGeneratorView.
-    JWT-authed; admin-only; bypasses FlaskForm CSRF + Flask-Login coupling."""
+    """Queue timelapse/keogram/startrail/panorama generation tasks. Admin-only."""
     from datetime import datetime as _dt
     from sqlalchemy import and_
     from flask_jwt_extended import current_user as jwt_user
@@ -1378,8 +1364,6 @@ def notifications_ack():
     return view.get(camera_id=camera_id)
 
 
-# ─── Phase 1: Admin pages ─────────────────────────────────────────────────
-
 @bp_api_v2.route('/users', methods=['GET'])
 @jwt_required()
 def users_list():
@@ -1532,9 +1516,7 @@ def tasks_list():
 @bp_api_v2.route('/config-history', methods=['GET'])
 @jwt_required()
 def config_history():
-    # LEFT OUTER JOIN so configs whose owner row was deleted still appear
-    # (legacy did INNER JOIN and silently dropped them). Orphans get
-    # username=None which the React side renders as <deleted>.
+    # OUTER JOIN: keep configs whose owner row was deleted (username = None).
     from .models import IndiAllSkyDbConfigTable
     rows = db.session.query(
             IndiAllSkyDbConfigTable.id,
@@ -1567,12 +1549,8 @@ def config_history():
 @bp_api_v2.route('/config-download/<int:config_id>', methods=['GET'])
 @jwt_required()
 def config_download(config_id):
-    """JWT-protected proxy to the legacy ConfigDownloadView."""
+    """Stream a config snapshot as a JSON file download."""
     from .views import ConfigDownloadView
-    # ConfigDownloadView.dispatch_request reads request.args['id'] and 'redact'.
-    # We forward via mutating request.args isn't ideal; instead instantiate and
-    # call the underlying logic by overriding args lookup via query string.
-    # Simpler: re-implement minimal logic here.
     from .models import IndiAllSkyDbConfigTable
     import io
     import json as _json
@@ -1604,7 +1582,7 @@ def config_download(config_id):
 @bp_api_v2.route('/config-restore', methods=['POST'])
 @jwt_required()
 def config_restore():
-    """Restore config from an uploaded JSON file. Admin-only (matches legacy)."""
+    """Restore config from an uploaded JSON file. Admin-only."""
     import io
     import json as _json
     import tempfile
@@ -1648,7 +1626,6 @@ def config_restore():
         except FileNotFoundError:
             pass
 
-    # Basic shape check, mirroring AjaxConfigRestoreView
     if (
         not isinstance(config_dict.get('INDI_SERVER'), str)
         or not isinstance(config_dict.get('CCD_CONFIG'), dict)
@@ -1707,3 +1684,86 @@ def _truthy_form(v):
         return False
     s = str(v).strip().lower()
     return s not in ('', '0', 'false', 'no', 'off')
+
+
+@bp_api_v2.route('/config', methods=['GET'])
+@jwt_required()
+def config_get():
+    """Return the current config as a nested dict, plus camera limits used to
+    constrain range-bound fields (gain, binning, exposure)."""
+    from ..config import IndiAllSkyConfig
+    cfg_obj = IndiAllSkyConfig()
+
+    camera_id = request.args.get('camera_id')
+    cam = None
+    if camera_id:
+        try:
+            cam = IndiAllSkyDbCameraTable.query\
+                .filter(IndiAllSkyDbCameraTable.id == int(camera_id)).first()
+        except (TypeError, ValueError):
+            cam = None
+    if cam is None:
+        cam = IndiAllSkyDbCameraTable.query\
+            .order_by(IndiAllSkyDbCameraTable.id.asc()).first()
+
+    cam_ctx = None
+    if cam is not None:
+        max_exp = float(cam.maxExposure or 0)
+        cam_ctx = {
+            'id'           : cam.id,
+            'name'         : cam.name,
+            'minGain'      : float(cam.minGain or 0),
+            'maxGain'      : float(cam.maxGain or 0),
+            'minBinning'   : cam.minBinning,
+            'maxBinning'   : cam.maxBinning,
+            'minExposure'  : float(cam.minExposure or 0),
+            'maxExposure'  : 120 if max_exp > 120 else max_exp,
+        }
+
+    return jsonify({
+        'config'    : cfg_obj.config,
+        'config_id' : cfg_obj.config_id,
+        'camera'    : cam_ctx,
+    })
+
+
+@bp_api_v2.route('/config', methods=['POST'])
+@jwt_required()
+def config_save():
+    """Replace the current config with the posted nested dict. Admin-only.
+    Body: { config: {...}, note?: "..." }
+    """
+    from flask_jwt_extended import current_user as jwt_user
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'form_global': ['admin required']}), 403
+
+    body = request.get_json(silent=True) or {}
+    new_config = body.get('config')
+    note = str(body.get('note') or 'Saved via web UI')
+
+    if not isinstance(new_config, dict):
+        return jsonify({'form_global': ['config must be an object']}), 400
+
+    # Same shape sanity check as Config Restore
+    if (
+        not isinstance(new_config.get('INDI_SERVER'), str)
+        or not isinstance(new_config.get('CCD_CONFIG'), dict)
+        or not isinstance(new_config.get('INDI_CONFIG_DEFAULTS'), dict)
+    ):
+        return jsonify({'form_global': ['Config is missing required keys']}), 400
+
+    from ..config import IndiAllSkyConfig
+    from ..exceptions import ConfigSaveException
+    cfg_obj = IndiAllSkyConfig()
+    username = jwt_user.username if jwt_user is not None else 'system'
+
+    try:
+        cfg_obj.config = new_config
+        entry = cfg_obj.save(username, note)
+    except ConfigSaveException as e:
+        return jsonify({'form_global': [str(e)]}), 400
+
+    return jsonify({
+        'success-message': 'Config saved',
+        'config_id': entry.id,
+    })

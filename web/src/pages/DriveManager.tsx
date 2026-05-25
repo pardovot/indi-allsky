@@ -142,7 +142,6 @@ function DrivesContent() {
         <Banner tone="warn">Read-only — admin privileges required for any action.</Banner>
       )}
 
-      {/* Tab bar — mirrors the legacy Drives / Mounts split. */}
       <div className="flex items-center gap-1 border-b border-edge">
         <TabBtn active={tab === 'drives'} onClick={() => setTab('drives')}>Drives</TabBtn>
         <TabBtn active={tab === 'mounts'} onClick={() => setTab('mounts')}>Mounts</TabBtn>
