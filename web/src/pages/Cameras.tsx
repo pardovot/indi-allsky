@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import PageShell from '@/components/PageShell';
@@ -27,7 +27,12 @@ export default function Cameras() {
     <PageShell>
       {() => (
         <main className="flex-1 flex flex-col px-4 py-4 gap-4">
-          <h1 className="text-ink-bright text-lg font-semibold tracking-tight">Cameras</h1>
+          <div>
+            <h1 className="text-ink-bright text-lg font-semibold tracking-tight">Cameras</h1>
+            <p className="text-[11px] text-ink-dim mt-0.5">
+              Admins can edit a camera's friendly name and toggle whether it appears in the topbar selector.
+            </p>
+          </div>
           <Content />
         </main>
       )}
@@ -116,7 +121,7 @@ function Content() {
           },
           {
             key: 'hidden',
-            label: 'Hidden',
+            label: 'Visibility',
             render: (r) => (
               <HiddenToggle
                 cam={r}
@@ -186,69 +191,131 @@ function Content() {
   );
 }
 
+/**
+ * Always-input-styled friendly name cell.
+ * Saves on blur or Enter; Esc reverts. Shows a transient ✓ after a successful save.
+ */
 function FriendlyNameCell({
   cam, editable, onSave,
 }: { cam: Camera; editable: boolean; onSave: (value: string | null) => void }) {
-  const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(cam.friendlyName ?? '');
+  const [savedFlash, setSavedFlash] = useState(false);
+  const prevSaved = useRef(cam.friendlyName ?? '');
 
-  if (!editable || !editing) {
-    return (
-      <button
-        type="button"
-        disabled={!editable}
-        onClick={() => { setValue(cam.friendlyName ?? ''); setEditing(true); }}
-        className={[
-          'text-left',
-          editable ? 'hover:text-ink-bright cursor-text' : 'cursor-default',
-          cam.friendlyName ? 'text-ink' : 'text-ink-dim italic',
-        ].join(' ')}
-      >
-        {cam.friendlyName || '—'}
-      </button>
-    );
-  }
+  // Sync external updates (e.g., after refetch) into local state.
+  useEffect(() => {
+    setValue(cam.friendlyName ?? '');
+    prevSaved.current = cam.friendlyName ?? '';
+  }, [cam.friendlyName]);
 
   const commit = () => {
     const v = value.trim();
-    setEditing(false);
-    if (v === (cam.friendlyName ?? '')) return;
+    if (v === prevSaved.current) {
+      setValue(v);
+      return;
+    }
+    prevSaved.current = v;
     onSave(v.length ? v : null);
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1200);
   };
 
   return (
-    <input
-      autoFocus
-      value={value}
-      maxLength={100}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        if (e.key === 'Escape') { setEditing(false); }
-      }}
-      className="bg-bg-2 border border-edge focus:border-accent focus:outline-none rounded px-1.5 py-0.5 text-ink text-sm w-44"
-    />
+    <div className="relative inline-flex items-center gap-1.5">
+      <input
+        type="text"
+        disabled={!editable}
+        value={value}
+        maxLength={100}
+        placeholder={editable ? 'Set friendly name…' : '—'}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            setValue(prevSaved.current);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        className={[
+          'rounded px-2 py-1 text-sm w-48 transition-colors',
+          'bg-bg-2 border placeholder:text-ink-dim/60',
+          editable
+            ? 'border-edge hover:border-edge-strong focus:border-accent focus:outline-none text-ink'
+            : 'border-transparent text-ink-dim cursor-not-allowed',
+        ].join(' ')}
+      />
+      {editable && (
+        <PencilIcon className="text-ink-dim/40 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+      )}
+      {/* Absolute so visibility toggling never shifts the cell layout. */}
+      <span
+        aria-hidden={!savedFlash}
+        className={[
+          'absolute left-full ml-2 text-[10px] text-info pointer-events-none whitespace-nowrap',
+          'transition-opacity duration-200',
+          savedFlash ? 'opacity-100' : 'opacity-0',
+        ].join(' ')}
+      >saved</span>
+    </div>
   );
 }
 
+function PencilIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="11" height="11" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+/**
+ * Toggle that controls whether this camera appears in the topbar selector.
+ * Phrased from the user's POV — "Show in selector" with an on/off switch is
+ * clearer than a "hidden" badge that doubles as a button.
+ */
 function HiddenToggle({
   cam, disabled, onToggle,
 }: { cam: Camera; disabled: boolean; onToggle: (v: boolean) => void }) {
+  const shown = !cam.hidden;
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={() => onToggle(!cam.hidden)}
-      title={cam.hidden ? 'Hidden from camera selector' : 'Visible in camera selector'}
+    <label
       className={[
-        'text-[10px] px-1.5 py-0.5 rounded border transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-        cam.hidden
-          ? 'bg-warn/15 border-warn/40 text-warn hover:bg-warn/25'
-          : 'bg-bg-3 border-edge text-ink-dim hover:text-ink',
+        'inline-flex items-center gap-2',
+        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
       ].join(' ')}
+      title={shown
+        ? 'Shown in camera selector — click to hide'
+        : 'Hidden from camera selector — click to show'}
     >
-      {cam.hidden ? 'hidden' : 'visible'}
-    </button>
+      <span
+        role="switch"
+        aria-checked={shown}
+        aria-disabled={disabled}
+        onClick={(e) => {
+          e.preventDefault();
+          if (!disabled) onToggle(!cam.hidden); // toggle hidden = invert "shown"
+        }}
+        className={[
+          'relative inline-block h-4 w-7 rounded-full transition-colors flex-shrink-0',
+          shown ? 'bg-info' : 'bg-bg-3 border border-edge',
+        ].join(' ')}
+      >
+        <span
+          className={[
+            'absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform shadow',
+            shown ? 'translate-x-3.5' : 'translate-x-0.5',
+          ].join(' ')}
+        />
+      </span>
+      <span className={['text-xs', shown ? 'text-ink' : 'text-ink-dim'].join(' ')}>
+        {shown ? 'Show in selector' : 'Hidden'}
+      </span>
+    </label>
   );
 }
