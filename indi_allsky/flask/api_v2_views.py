@@ -1758,6 +1758,7 @@ def config_save():
     body = request.get_json(silent=True) or {}
     new_config = body.get('config')
     note = str(body.get('note') or 'Saved via web UI')
+    reload_on_save = bool(body.get('reload'))
 
     if not isinstance(new_config, dict):
         return jsonify({'form_global': ['config must be an object']}), 400
@@ -1785,7 +1786,30 @@ def config_save():
     except ConfigSaveException as e:
         return jsonify({'form_global': [str(e)]}), 400
 
+    if reload_on_save:
+        from .miscDb import miscDb
+        from .. import constants
+        from .models import (
+            IndiAllSkyDbTaskQueueTable,
+            TaskQueueQueue,
+            TaskQueueState,
+        )
+        miscDb(cfg_obj.config).setState('STATUS', constants.STATUS_RELOADING)
+        db.session.add(IndiAllSkyDbTaskQueueTable(
+            queue=TaskQueueQueue.MAIN,
+            state=TaskQueueState.MANUAL,
+            priority=100,
+            data={'action': 'reload'},
+        ))
+        db.session.commit()
+        return jsonify({
+            'success-message': 'Config saved. Reloading indi-allsky service.',
+            'config_id': entry.id,
+            'reloaded': True,
+        })
+
     return jsonify({
         'success-message': 'Config saved',
         'config_id': entry.id,
+        'reloaded': False,
     })

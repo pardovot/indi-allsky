@@ -85,7 +85,7 @@ export interface TabRegistryEntry {
 }
 
 export const TAB_REGISTRY: TabRegistryEntry[] = [
-  { id: 'camera',       label: 'Camera',             tone: 'danger',    done: false },
+  { id: 'camera',       label: 'Camera',             tone: 'danger',    done: true  },
   { id: 'image',        label: 'Image',              tone: 'light',     done: false },
   { id: 'processing',   label: 'Processing',         tone: 'success',   done: false },
   { id: 'overlays',     label: 'Overlays',           tone: 'secondary', done: false },
@@ -179,6 +179,21 @@ export function findChanges(
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === 'object' && !Array.isArray(v);
+}
+
+export function pathStartsWith(path: FieldPath, prefix: FieldPath): boolean {
+  if (path.length < prefix.length) return false;
+  for (let i = 0; i < prefix.length; i++) {
+    if (path[i] !== prefix[i]) return false;
+  }
+  return true;
+}
+
+export function collectTabPaths(schema: TabSchema | undefined): FieldPath[] {
+  if (!schema) return [];
+  const out: FieldPath[] = [];
+  for (const g of schema.groups) for (const f of g.fields) out.push(f.path);
+  return out;
 }
 
 function jsonEqual(a: unknown, b: unknown): boolean {

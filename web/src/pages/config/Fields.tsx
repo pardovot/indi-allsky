@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { ReactNode, useId } from 'react';
 import type {
   BoolField,
   Field,
@@ -14,14 +14,15 @@ import { getPath, pathToString } from './types';
 interface FieldRendererProps {
   field: Field;
   config: unknown;
-  /** Reference defaults (base_config). Used to detect modified state and to reset per-field. */
   defaults?: unknown;
   errors: Record<string, string[]>;
   onChange: (path: FieldPath, value: unknown) => void;
   disabled?: boolean;
 }
 
-export function FieldRenderer({ field, config, defaults, errors, onChange, disabled }: FieldRendererProps) {
+export function FieldRenderer({
+  field, config, defaults, errors, onChange, disabled,
+}: FieldRendererProps) {
   const key = pathToString(field.path);
   const err = errors[key];
   const id = useId();
@@ -29,111 +30,148 @@ export function FieldRenderer({ field, config, defaults, errors, onChange, disab
   const defaultValue = defaults === undefined ? undefined : getPath(defaults, field.path);
   const hasDefault = defaults !== undefined && defaultValue !== undefined;
   const isModified = hasDefault && !jsonEqualLoose(value, defaultValue);
+  const showReset = isModified && !disabled && !field.readonly;
+  const resetTitle = showReset ? `Reset to default: ${formatDefaultPreview(defaultValue)}` : '';
+  const onReset = () => onChange(field.path, defaultValue);
 
-  const label = (
-    <div className="flex items-center justify-between gap-2">
-      <label htmlFor={id} className="text-[11px] uppercase tracking-wider text-ink-dim">
+  if (field.kind === 'bool') {
+    return (
+      <FieldShell>
+        <div className="flex items-center justify-between gap-3">
+          <label
+            htmlFor={id}
+            className={[
+              'text-sm flex-1 min-w-0 cursor-pointer',
+              isModified ? 'text-warn' : 'text-ink',
+            ].join(' ')}
+          >
+            {field.label}
+          </label>
+          <div className="flex items-center gap-3 shrink-0">
+            {showReset && <ResetChip title={resetTitle} onClick={onReset} />}
+            <BoolSwitch
+              id={id}
+              value={!!value}
+              disabled={disabled || field.readonly}
+              onChange={(v) => onChange(field.path, v)}
+            />
+          </div>
+        </div>
+        {field.help && (
+          <p className="text-[11px] text-ink-dim leading-snug mt-1">{field.help}</p>
+        )}
+      </FieldShell>
+    );
+  }
+
+  const labelRow = (
+    <div className="flex items-baseline justify-between gap-2 min-h-[14px]">
+      <label
+        htmlFor={id}
+        className={[
+          'text-[11px] uppercase tracking-wider font-medium',
+          isModified ? 'text-warn' : 'text-ink-dim',
+        ].join(' ')}
+      >
         {field.label}
       </label>
-      {isModified && !disabled && !field.readonly && (
-        <ResetButton
-          defaultValue={defaultValue}
-          onClick={() => onChange(field.path, defaultValue)}
-        />
-      )}
+      {showReset && <ResetChip title={resetTitle} onClick={onReset} />}
     </div>
   );
 
-  const helpAndError = (
+  const help = (
     <>
-      {field.help && <div className="text-[11px] text-ink-dim mt-1">{field.help}</div>}
-      {err?.length ? (
-        <div className="text-[11px] text-danger mt-1">{err.join(' · ')}</div>
-      ) : null}
+      {field.help && <p className="text-[11px] text-ink-dim leading-snug mt-1">{field.help}</p>}
+      {err?.length ? <p className="text-[11px] text-danger leading-snug mt-1">{err.join(' · ')}</p> : null}
     </>
   );
 
+  let control: ReactNode;
   switch (field.kind) {
     case 'text':
-      return (
-        <div className="space-y-1">
-          {label}
-          <TextInput
-            id={id}
-            field={field}
-            value={typeof value === 'string' ? value : (value == null ? '' : String(value))}
-            disabled={disabled || field.readonly}
-            onChange={(v) => onChange(field.path, v)}
-            invalid={!!err?.length}
-          />
-          {helpAndError}
-        </div>
+      control = (
+        <TextInput
+          id={id} field={field}
+          value={typeof value === 'string' ? value : (value == null ? '' : String(value))}
+          disabled={disabled || field.readonly}
+          onChange={(v) => onChange(field.path, v)}
+          invalid={!!err?.length}
+        />
       );
+      break;
     case 'textarea':
-      return (
-        <div className="space-y-1">
-          {label}
-          <TextareaInput
-            id={id}
-            field={field}
-            value={typeof value === 'string' ? value : (value == null ? '' : String(value))}
-            disabled={disabled || field.readonly}
-            onChange={(v) => onChange(field.path, v)}
-            invalid={!!err?.length}
-          />
-          {helpAndError}
-        </div>
+      control = (
+        <TextareaInput
+          id={id} field={field}
+          value={typeof value === 'string' ? value : (value == null ? '' : String(value))}
+          disabled={disabled || field.readonly}
+          onChange={(v) => onChange(field.path, v)}
+          invalid={!!err?.length}
+        />
       );
+      break;
     case 'number':
-      return (
-        <div className="space-y-1">
-          {label}
-          <NumberInput
-            id={id}
-            field={field}
-            value={value as number | string | undefined}
-            disabled={disabled || field.readonly}
-            onChange={(v) => onChange(field.path, v)}
-            invalid={!!err?.length}
-          />
-          {helpAndError}
-        </div>
+      control = (
+        <NumberInput
+          id={id} field={field}
+          value={value as number | string | undefined}
+          disabled={disabled || field.readonly}
+          onChange={(v) => onChange(field.path, v)}
+          invalid={!!err?.length}
+        />
       );
-    case 'bool':
-      return (
-        <div className="space-y-1">
-          <BoolInput
-            id={id}
-            field={field}
-            value={!!value}
-            disabled={disabled || field.readonly}
-            onChange={(v) => onChange(field.path, v)}
-          />
-          {helpAndError}
-        </div>
-      );
+      break;
     case 'select':
-      return (
-        <div className="space-y-1">
-          {label}
-          <SelectInput
-            id={id}
-            field={field}
-            value={value == null ? '' : String(value)}
-            disabled={disabled || field.readonly}
-            onChange={(v) => onChange(field.path, v)}
-            invalid={!!err?.length}
-          />
-          {helpAndError}
-        </div>
+      control = (
+        <SelectInput
+          id={id} field={field}
+          value={value == null ? '' : String(value)}
+          disabled={disabled || field.readonly}
+          onChange={(v) => onChange(field.path, v)}
+          invalid={!!err?.length}
+        />
       );
+      break;
   }
+
+  return (
+    <FieldShell>
+      {labelRow}
+      <div className="mt-1.5">{control}</div>
+      {help}
+    </FieldShell>
+  );
 }
 
-// ── inputs ────────────────────────────────────────────────────────────────
+/**
+ * Each field becomes one grid row. The shell carries the vertical padding
+ * + min-height so paired sections line up cleanly under subgrid.
+ */
+function FieldShell({ children }: { children: ReactNode }) {
+  return <div className="py-2">{children}</div>;
+}
+
+function ResetChip({ title, onClick }: { title: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label="Reset to default"
+      className="shrink-0 text-[10px] text-warn/80 hover:text-warn flex items-center gap-1 transition-colors"
+    >
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="1 4 1 10 7 10" />
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+      </svg>
+      reset
+    </button>
+  );
+}
 
 const inputBase =
-  'w-full bg-bg-2 border rounded-md px-2 py-1.5 text-ink text-sm placeholder:text-ink-dim/60 ' +
+  'w-full bg-bg-2 border rounded-md px-2.5 py-1.5 text-ink text-sm placeholder:text-ink-dim/60 ' +
   'focus:outline-none focus:border-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
 function fieldClasses(invalid: boolean): string {
@@ -185,6 +223,9 @@ function NumberInput({
   disabled?: boolean; onChange: (v: number | null) => void; invalid: boolean;
 }) {
   const display = value == null || value === '' ? '' : String(value);
+  // No extra right padding: padding-right pushes the native spinner inward,
+  // which would land it left of the reset glyph. Keep the spinner at the edge
+  // and park the reset just to its left instead.
   return (
     <input
       id={id}
@@ -206,34 +247,35 @@ function NumberInput({
   );
 }
 
-function BoolInput({
-  id, field, value, disabled, onChange,
+function BoolSwitch({
+  id, value, disabled, onChange,
 }: {
-  id: string; field: BoolField; value: boolean;
+  id: string; value: boolean;
   disabled?: boolean; onChange: (v: boolean) => void;
 }) {
   return (
-    <label htmlFor={id} className={['inline-flex items-center gap-2', disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'].join(' ')}>
-      <span
+    <>
+      <button
+        type="button"
         role="switch"
         aria-checked={value}
         aria-disabled={disabled}
-        onClick={(e) => { e.preventDefault(); if (!disabled) onChange(!value); }}
+        onClick={() => { if (!disabled) onChange(!value); }}
         className={[
-          'relative inline-block h-4 w-7 rounded-full transition-colors flex-shrink-0',
-          value ? 'bg-info' : 'bg-bg-3 border border-edge',
+          'relative inline-block h-5 w-9 rounded-full transition-colors shrink-0',
+          value ? 'bg-info' : 'bg-bg-3 ring-1 ring-inset ring-edge',
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
         ].join(' ')}
       >
         <span
           className={[
-            'absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform shadow',
-            value ? 'translate-x-3.5' : 'translate-x-0.5',
+            'absolute left-0.5 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-white shadow transition-transform',
+            value ? 'translate-x-4' : 'translate-x-0',
           ].join(' ')}
         />
-      </span>
-      <span className="text-sm text-ink select-none">{field.label}</span>
+      </button>
       <input id={id} type="checkbox" className="sr-only" checked={value} readOnly />
-    </label>
+    </>
   );
 }
 
@@ -271,10 +313,56 @@ function SelectInput({
   );
 }
 
-// ── group + section ───────────────────────────────────────────────────────
+/**
+ * Renders a pair of sections side-by-side so corresponding field rows share
+ * the same height (CSS subgrid). On narrow screens the sections stack.
+ */
+export function SectionPair({
+  groups, config, defaults, errors, onChange, disabled,
+}: {
+  groups: [FieldGroup] | [FieldGroup, FieldGroup];
+  config: unknown;
+  defaults?: unknown;
+  errors: Record<string, string[]>;
+  onChange: (path: FieldPath, value: unknown) => void;
+  disabled?: boolean;
+}) {
+  if (groups.length === 1) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <SectionCard
+          group={groups[0]} config={config} defaults={defaults}
+          errors={errors} onChange={onChange} disabled={disabled}
+        />
+      </div>
+    );
+  }
 
-export function GroupSection({
-  group, config, defaults, errors, onChange, disabled,
+  const [left, right] = groups;
+  const rowCount = 1 + Math.max(left.fields.length, right.fields.length); // header row + field rows
+  const rowSpan = `span ${rowCount}`;
+
+  return (
+    <div
+      className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-4 lg:gap-y-0"
+      style={{ gridTemplateRows: `repeat(${rowCount}, min-content)` }}
+    >
+      <SectionCard
+        group={left} config={config} defaults={defaults}
+        errors={errors} onChange={onChange} disabled={disabled}
+        subgridRowSpan={rowSpan}
+      />
+      <SectionCard
+        group={right} config={config} defaults={defaults}
+        errors={errors} onChange={onChange} disabled={disabled}
+        subgridRowSpan={rowSpan}
+      />
+    </div>
+  );
+}
+
+function SectionCard({
+  group, config, defaults, errors, onChange, disabled, subgridRowSpan,
 }: {
   group: FieldGroup;
   config: unknown;
@@ -282,19 +370,32 @@ export function GroupSection({
   errors: Record<string, string[]>;
   onChange: (path: FieldPath, value: unknown) => void;
   disabled?: boolean;
+  subgridRowSpan?: string;
 }) {
+  const subgrid = !!subgridRowSpan;
   return (
-    <section className="bg-bg-1 border border-edge rounded-lg overflow-hidden">
-      {(group.title || group.description) && (
-        <header className="px-4 py-2.5 bg-bg-2 border-b border-edge">
-          {group.title && <h2 className="text-ink-bright text-sm font-medium">{group.title}</h2>}
-          {group.description && <p className="text-[11px] text-ink-dim mt-0.5">{group.description}</p>}
-        </header>
-      )}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 p-4">
-        {group.fields.map((f) => (
+    <section
+      className={[
+        'bg-bg-1 border border-edge rounded-lg overflow-hidden',
+        subgrid ? 'lg:grid lg:grid-rows-subgrid' : 'flex flex-col',
+      ].join(' ')}
+      style={subgrid ? { gridRow: subgridRowSpan } : undefined}
+    >
+      <header className="px-4 py-2.5 bg-bg-2 border-b border-edge">
+        {group.title && <h2 className="text-ink-bright text-sm font-medium">{group.title}</h2>}
+        {group.description && <p className="text-[11px] text-ink-dim mt-0.5">{group.description}</p>}
+      </header>
+      {/* Field rows. In subgrid mode each row participates in the outer pair's row grid. */}
+      {group.fields.map((f, i) => (
+        <div
+          key={pathToString(f.path)}
+          className={[
+            'px-4',
+            i === group.fields.length - 1 ? 'pb-3' : '',
+            i === 0 ? 'pt-2' : '',
+          ].join(' ')}
+        >
           <FieldRenderer
-            key={pathToString(f.path)}
             field={f}
             config={config}
             defaults={defaults}
@@ -302,37 +403,30 @@ export function GroupSection({
             onChange={onChange}
             disabled={disabled}
           />
-        ))}
-      </div>
+        </div>
+      ))}
     </section>
   );
 }
 
-function ResetButton({ defaultValue, onClick }: { defaultValue: unknown; onClick: () => void }) {
-  const preview = formatDefaultPreview(defaultValue);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={preview ? `Reset to default: ${preview}` : 'Reset to default'}
-      className="text-[10px] text-ink-dim hover:text-info flex items-center gap-0.5 transition-colors"
-    >
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="1 4 1 10 7 10" />
-        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-      </svg>
-      reset
-    </button>
-  );
+/** Backwards-compat: existing callers that render groups individually. */
+export function GroupSection(props: {
+  group: FieldGroup;
+  config: unknown;
+  defaults?: unknown;
+  errors: Record<string, string[]>;
+  onChange: (path: FieldPath, value: unknown) => void;
+  disabled?: boolean;
+}) {
+  return <SectionCard {...props} />;
 }
 
 function formatDefaultPreview(v: unknown): string {
-  if (v == null) return '';
+  if (v == null) return '∅';
   if (typeof v === 'boolean') return v ? 'on' : 'off';
-  if (typeof v === 'string') return v.length > 30 ? v.slice(0, 30) + '…' : v;
+  if (typeof v === 'string') return v.length > 30 ? v.slice(0, 30) + '…' : v || '""';
   if (typeof v === 'number') return String(v);
-  return '';
+  return JSON.stringify(v).slice(0, 30);
 }
 
 function jsonEqualLoose(a: unknown, b: unknown): boolean {
