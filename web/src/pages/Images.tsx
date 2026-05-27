@@ -67,7 +67,7 @@ export default function Images() {
   const [images, setImages] = useState<ImageEntry[]>([]);
   const [imageIdx, setImageIdx] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [, setFullscreen] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {

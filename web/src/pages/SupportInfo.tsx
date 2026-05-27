@@ -23,8 +23,6 @@ async function downloadGzipped(text: string, prefix: string) {
   const stream = new ReadableStream({
     start(c) { c.enqueue(bytes); c.close(); },
   });
-  // CompressionStream is available in modern browsers
-  // @ts-expect-error CompressionStream typing varies by TS lib
   const compressed = stream.pipeThrough(new CompressionStream('gzip'));
   const blob = await new Response(compressed).blob();
   const url = URL.createObjectURL(blob);

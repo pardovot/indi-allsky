@@ -62,7 +62,7 @@ function resolveImageUrl(url: string | null | undefined): string {
   return `/indi-allsky/${url}`;
 }
 
-export default function Timelapses({ endpoint, queryKey, title, mini = false }: TimelapsesProps) {
+export default function Timelapses({ endpoint, title, mini = false }: TimelapsesProps) {
   const [navOpen, setNavOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [cameraId, setCameraId] = useState<number | null>(() => {

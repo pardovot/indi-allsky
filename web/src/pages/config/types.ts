@@ -86,21 +86,21 @@ export interface TabRegistryEntry {
 
 export const TAB_REGISTRY: TabRegistryEntry[] = [
   { id: 'camera',       label: 'Camera',             tone: 'danger',    done: true  },
-  { id: 'image',        label: 'Image',              tone: 'light',     done: false },
-  { id: 'processing',   label: 'Processing',         tone: 'success',   done: false },
-  { id: 'overlays',     label: 'Overlays',           tone: 'secondary', done: false },
-  { id: 'timelapse',    label: 'Timelapse',          tone: 'primary',   done: false },
+  { id: 'image',        label: 'Image',              tone: 'light',     done: true  },
+  { id: 'processing',   label: 'Processing',         tone: 'success',   done: true  },
+  { id: 'overlays',     label: 'Overlays',           tone: 'secondary', done: true  },
+  { id: 'timelapse',    label: 'Timelapse',          tone: 'primary',   done: true  },
   { id: 'location',     label: 'Location',           tone: 'info',      done: true  },
-  { id: 'admin',        label: 'Admin',              tone: 'warning',   done: false },
-  { id: 'filetransfer', label: 'File Transfer',      tone: 'primary',   done: false },
-  { id: 'mqtt',         label: 'MQTT',               tone: 'info',      done: false },
-  { id: 'youtube',      label: 'YouTube',            tone: 'danger',    done: false },
-  { id: 's3',           label: 'Object Storage',     tone: 'secondary', done: false },
-  { id: 'syncapi',      label: 'SyncAPI',            tone: 'light',     done: false },
-  { id: 'sensors',      label: 'Sensors',            tone: 'primary',   done: false },
-  { id: 'devices',      label: 'Devices',            tone: 'danger',    done: false },
-  { id: 'adsb',         label: 'ADS-B',              tone: 'secondary', done: false },
-  { id: 'sattrack',     label: 'Satellite Tracking', tone: 'light',     done: false },
+  { id: 'admin',        label: 'Admin',              tone: 'warning',   done: true  },
+  { id: 'filetransfer', label: 'File Transfer',      tone: 'primary',   done: true  },
+  { id: 'mqtt',         label: 'MQTT',               tone: 'info',      done: true  },
+  { id: 'youtube',      label: 'YouTube',            tone: 'danger',    done: true  },
+  { id: 's3',           label: 'Object Storage',     tone: 'secondary', done: true  },
+  { id: 'syncapi',      label: 'SyncAPI',            tone: 'light',     done: true  },
+  { id: 'sensors',      label: 'Sensors',            tone: 'primary',   done: true  },
+  { id: 'devices',      label: 'Devices',            tone: 'danger',    done: true  },
+  { id: 'adsb',         label: 'ADS-B',              tone: 'secondary', done: true  },
+  { id: 'sattrack',     label: 'Satellite Tracking', tone: 'light',     done: true  },
 ];
 
 // ── path helpers ──────────────────────────────────────────────────────────
@@ -120,16 +120,16 @@ export function getPath(obj: unknown, path: FieldPath): unknown {
  */
 export function setPath<T>(obj: T, path: FieldPath, value: unknown): T {
   if (path.length === 0) return value as T;
-  const root: Record<string | number, unknown> = (obj && typeof obj === 'object')
-    ? { ...(obj as Record<string | number, unknown>) }
-    : {};
+  const cloneContainer = (v: unknown, childKey: string | number): unknown[] | Record<string | number, unknown> => {
+    if (Array.isArray(v)) return [...v];
+    if (v && typeof v === 'object') return { ...(v as Record<string | number, unknown>) };
+    return typeof childKey === 'number' ? [] : {};
+  };
+  const root = cloneContainer(obj, path[0]) as Record<string | number, unknown>;
   let cur = root;
   for (let i = 0; i < path.length - 1; i++) {
     const k = path[i];
-    const child = cur[k];
-    const next = (child && typeof child === 'object' && !Array.isArray(child))
-      ? { ...(child as Record<string | number, unknown>) }
-      : {};
+    const next = cloneContainer(cur[k], path[i + 1]) as Record<string | number, unknown>;
     cur[k] = next;
     cur = next;
   }

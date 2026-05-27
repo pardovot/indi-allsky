@@ -1,3 +1,4 @@
+import os
 import time
 import random
 from datetime import datetime
@@ -1813,3 +1814,244 @@ def config_save():
         'config_id': entry.id,
         'reloaded': False,
     })
+
+
+@bp_api_v2.route("/mask", methods=["GET"])
+@jwt_required()
+def mask_base():
+    """Mask base image URL + last-modified date."""
+    from pathlib import Path as _Path
+    from datetime import datetime as _dt
+    from ..config import IndiAllSkyConfig
+    cfg = IndiAllSkyConfig().config
+    uri = 'images/mask_base.png'
+    image_dir = _Path(cfg['IMAGE_FOLDER']).absolute()
+    p = image_dir.joinpath('mask_base.png')
+    date = ''
+    if p.exists():
+        date = _dt.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    return jsonify({"url": uri, "date": date, "exists": p.exists()})
+
+
+def _gpio_read_state(cfg, gpio_class, pin_name):
+    from ..devices.exceptions import DeviceControlException
+    try:
+        pin = gpio_class(cfg, pin_1_name=pin_name)
+        return int(pin.state)
+    except DeviceControlException:
+        return -1
+
+
+@bp_api_v2.route('/gpio', methods=['GET'])
+@jwt_required()
+def gpio_get():
+    """Manual GPIO pin names + current states."""
+    from ..config import IndiAllSkyConfig
+    from ..devices import generic as indi_allsky_gpio
+    cfg = IndiAllSkyConfig().config
+    mg = cfg.get('MANUAL_GPIO', {})
+    names = [mg.get('A_PIN_1', '-1'), mg.get('A_PIN_2', '-1'), mg.get('A_PIN_3', '-1')]
+    gpio_class_str = mg.get('A_CLASSNAME')
+
+    states = [-1, -1, -1]
+    if gpio_class_str:
+        gpio_class = getattr(indi_allsky_gpio, gpio_class_str, None)
+        if gpio_class is not None:
+            states = [_gpio_read_state(cfg, gpio_class, n) for n in names]
+    return jsonify({
+        'gpio_class': gpio_class_str or '',
+        'pins': [{'id': i + 1, 'name': names[i], 'state': states[i]} for i in range(3)],
+    })
+
+
+@bp_api_v2.route('/gpio/set', methods=['POST'])
+@jwt_required()
+def gpio_set():
+    """Set a manual GPIO pin state. Admin-only."""
+    from flask_jwt_extended import current_user as jwt_user
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'failure-message': 'admin required'}), 403
+
+    from ..config import IndiAllSkyConfig
+    from ..devices import generic as indi_allsky_gpio
+    cfg = IndiAllSkyConfig().config
+
+    data = request.get_json(silent=True) or {}
+    pin_id = int(data.get('PIN_ID', 0))
+    new_state = data.get('NEW_PIN_STATE')
+
+    gpio_class_str = cfg.get('MANUAL_GPIO', {}).get('A_CLASSNAME')
+    if not gpio_class_str:
+        return jsonify({'failure-message': 'Manual GPIO not configured'}), 400
+    gpio_class = getattr(indi_allsky_gpio, gpio_class_str, None)
+    if gpio_class is None:
+        return jsonify({'failure-message': 'Invalid GPIO class'}), 400
+
+    pin_str = cfg.get('MANUAL_GPIO', {}).get('A_PIN_{0:d}'.format(pin_id))
+    if not pin_str:
+        return jsonify({'failure-message': 'Unknown pin'}), 400
+
+    pin = gpio_class(cfg, pin_1_name=pin_str)
+    pin.state = new_state
+    time.sleep(0.5)
+    return jsonify({
+        'success-message': 'Pin configured',
+        'pin_id': pin_id,
+        'pin_name': pin_str,
+        'pin_state': int(pin.state),
+    })
+
+
+@bp_api_v2.route('/astropanel', methods=['GET'])
+@jwt_required()
+def astropanel():
+    from .views import AjaxAstroPanelView
+    return AjaxAstroPanelView().get(int(request.args['camera_id']))
+
+
+@bp_api_v2.route('/focus', methods=['GET'])
+@jwt_required()
+def focus_data():
+    from .views import JsonFocusView
+    return JsonFocusView().dispatch_request()  # reads request.args: zoom, x_offset, y_offset
+
+
+@bp_api_v2.route('/focus/controller', methods=['POST'])
+@jwt_required()
+def focus_controller():
+    from flask_jwt_extended import current_user as jwt_user
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'focuser_error': ['admin required']}), 403
+
+    from .forms import IndiAllskyFocusControllerForm
+    from .views import AjaxFocusControllerView
+    from ..focuser import IndiAllSkyFocuserInterface
+    from ..devices.exceptions import DeviceControlException
+
+    view = AjaxFocusControllerView()  # provides config + verify_admin_network()
+
+    form = IndiAllskyFocusControllerForm(data=request.json, meta={'csrf': False})
+    if not form.validate():
+        return jsonify(form.errors), 400
+
+    if not view.verify_admin_network():
+        return jsonify({'focuser_error': ['Request not from admin network (flask.json)']}), 400
+
+    direction = str(request.json['DIRECTION'])
+    degrees = int(request.json['STEP_DEGREES'])
+
+    try:
+        focuser_interface = IndiAllSkyFocuserInterface(view.indi_allsky_config)
+    except (SystemError, ValueError, DeviceControlException) as e:
+        return jsonify({'focuser_error': ['Error initializing focuser: {0:s}'.format(str(e))]}), 400
+
+    try:
+        steps_offset = focuser_interface.move(direction, degrees)
+    except DeviceControlException as e:
+        return jsonify({'focuser_error': ['Error moving focuser: {0:s}'.format(str(e))]}), 400
+
+    focuser_interface.deinit()
+    return jsonify({'steps': steps_offset})
+
+
+@bp_api_v2.route('/network', methods=['GET'])
+@jwt_required()
+def network_get():
+    import socket
+    from .forms import IndiAllskyNetworkManagerForm
+
+    try:
+        hostname = socket.gethostname().split('.')[0]
+    except IndexError:
+        hostname = 'UNKNOWN'
+
+    nm_installed = True
+    try:
+        import dbus
+        bus = dbus.SystemBus()
+        bus.get_object('org.freedesktop.NetworkManager', '/org/freedesktop/NetworkManager')
+    except Exception:
+        nm_installed = False
+
+    form = IndiAllskyNetworkManagerForm()
+    return jsonify({
+        'hostname': hostname,
+        'nm_installed': nm_installed,
+        'docker': bool(os.environ.get('INDIALLSKY_DOCKER')),
+        'connections': form.CONNECTIONS_SELECT.choices,
+        'wifi_devices': form.WIFI_DEVICES_SELECT.choices,
+    })
+
+
+@bp_api_v2.route('/network/action', methods=['POST'])
+@jwt_required()
+def network_action():
+    from flask_jwt_extended import current_user as jwt_user
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'failure-message': 'admin required'}), 403
+
+    from .views import AjaxNetworkManagerView
+    view = AjaxNetworkManagerView()
+
+    data = request.get_json(silent=True) or {}
+    command = str(data.get('COMMAND', ''))
+
+    conn_commands = {
+        'deactivate':       lambda u: view.deactivateConnection(u),
+        'delete':           lambda u: view.deleteConnection(u),
+        'activate':         lambda u: view.activateConnection(u),
+        'autostart':        lambda u: view.setAutostartConnection(u, auto_connect=True),
+        'noautostart':      lambda u: view.setAutostartConnection(u, auto_connect=False),
+        'incpriority':      lambda u: view.incrementConnectionPriority(u),
+        'decpriority':      lambda u: view.decrementConnectionPriority(u),
+        'powersavedisable': lambda u: view.setPowersave(u, powersave=False),
+        'powersaveenable':  lambda u: view.setPowersave(u, powersave=True),
+    }
+
+    if command in conn_commands:
+        return conn_commands[command](str(data['CONNECTION']))
+
+    if command == 'scanap':
+        interface = str(data.get('INTERFACE', ''))
+        if not interface:
+            return jsonify({'failure-message': 'No interface selected'}), 400
+        return view.scanAPs(interface)
+
+    if command == 'connectap':
+        interface = str(data['INTERFACE'])
+        ap_path = str(data['AP_PATH'])
+        if not ap_path:
+            return jsonify({'failure-message': 'No AP selected'}), 400
+        return view.connectAP(interface, ap_path, str(data['PSK']), int(data['PRIORITY']), int(data['RETRIES']))
+
+    if command == 'createhotspot':
+        interface = str(data['INTERFACE'])
+        ssid = str(data['SSID'])
+        band = str(data['BAND'])
+        psk = str(data['PSK'])
+        nosecurity = bool(data['NOSECURITY'])
+        if not interface:
+            return jsonify({'failure-message': 'No interface selected'}), 400
+        if not ssid:
+            return jsonify({'failure-message': 'No SSID data'}), 400
+        if band not in ('bg', 'a'):
+            return jsonify({'failure-message': 'Invalid band selection'}), 400
+        if not nosecurity and len(psk) < 8:
+            return jsonify({'failure-message': 'PSK must be 8+ characters'}), 400
+        return view.createHotspot(interface, ssid, band, psk, nosecurity=nosecurity)
+
+    return jsonify({'failure-message': 'Unknown command'}), 400
+
+
+@bp_api_v2.route('/fitsimageviewer', methods=['POST'])
+@jwt_required()
+def fitsimageviewer():
+    from .views import AjaxFitsImageViewerView
+    return AjaxFitsImageViewerView().dispatch_request()
+
+
+@bp_api_v2.route('/processing', methods=['POST'])
+@jwt_required()
+def processing():
+    from .views import JsonImageProcessingView
+    return JsonImageProcessingView().dispatch_request()

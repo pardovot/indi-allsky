@@ -227,7 +227,6 @@ export default function VirtualSky() {
       await loadScript('/indi-allsky/static/html2canvas/html2canvas.min.js');
       const html2canvas = window.html2canvas;
       if (!html2canvas) throw new Error('html2canvas not loaded');
-      // @ts-expect-error legacy lib types
       const canvas = await html2canvas(wrapRef.current, { backgroundColor: null, scale: 1, useCORS: true });
       canvas.toBlob((blob: Blob | null) => {
         if (!blob) return;

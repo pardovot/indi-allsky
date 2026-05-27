@@ -1,6 +1,5 @@
 import { ReactNode, useId } from 'react';
 import type {
-  BoolField,
   Field,
   FieldGroup,
   FieldPath,
@@ -313,50 +312,43 @@ function SelectInput({
   );
 }
 
+const ROW_COLS: Record<number, string> = {
+  1: 'lg:grid-cols-1',
+  2: 'lg:grid-cols-2',
+  3: 'lg:grid-cols-3',
+};
+
 /**
- * Renders a pair of sections side-by-side so corresponding field rows share
- * the same height (CSS subgrid). On narrow screens the sections stack.
+ * Renders up to 3 sections side-by-side so corresponding field rows share the
+ * same height (CSS subgrid). On narrow screens the sections stack.
  */
-export function SectionPair({
+export function SectionRow({
   groups, config, defaults, errors, onChange, disabled,
 }: {
-  groups: [FieldGroup] | [FieldGroup, FieldGroup];
+  groups: FieldGroup[];
   config: unknown;
   defaults?: unknown;
   errors: Record<string, string[]>;
   onChange: (path: FieldPath, value: unknown) => void;
   disabled?: boolean;
 }) {
-  if (groups.length === 1) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <SectionCard
-          group={groups[0]} config={config} defaults={defaults}
-          errors={errors} onChange={onChange} disabled={disabled}
-        />
-      </div>
-    );
-  }
-
-  const [left, right] = groups;
-  const rowCount = 1 + Math.max(left.fields.length, right.fields.length); // header row + field rows
+  const rowCount = 1 + Math.max(...groups.map((g) => g.fields.length)); // header row + field rows
   const rowSpan = `span ${rowCount}`;
+  const cols = ROW_COLS[groups.length] ?? 'lg:grid-cols-3';
 
   return (
     <div
-      className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-4 lg:gap-y-0"
+      className={['grid grid-cols-1 gap-x-4 gap-y-4 lg:gap-y-0', cols].join(' ')}
       style={{ gridTemplateRows: `repeat(${rowCount}, min-content)` }}
     >
-      <SectionCard
-        group={left} config={config} defaults={defaults}
-        errors={errors} onChange={onChange} disabled={disabled}
-        subgridRowSpan={rowSpan}
-      />
-      <SectionCard
-        group={right} config={config} defaults={defaults}
-        errors={errors} onChange={onChange} disabled={disabled}
-        subgridRowSpan={rowSpan}
-      />
+      {groups.map((g, i) => (
+        <SectionCard
+          key={i}
+          group={g} config={config} defaults={defaults}
+          errors={errors} onChange={onChange} disabled={disabled}
+          subgridRowSpan={rowSpan}
+        />
+      ))}
     </div>
   );
 }

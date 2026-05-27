@@ -36,8 +36,6 @@ interface GalleryResp {
 
 const CAMERA_PREF_KEY = 'allsky_camera_id';
 
-type Field = 'YEAR_SELECT' | 'MONTH_SELECT' | 'DAY_SELECT' | 'HOUR_SELECT';
-
 export default function Gallery() {
   const [navOpen, setNavOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);

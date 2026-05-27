@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import PageShell from '@/components/PageShell';
-import { SectionPair } from './Fields';
+import { SectionRow } from './Fields';
 import type { FieldGroup } from './types';
 import {
   TAB_REGISTRY,
@@ -61,10 +61,6 @@ function Header() {
   return (
     <div className="flex items-baseline justify-between flex-wrap gap-x-3">
       <h1 className="text-ink-bright text-lg font-semibold tracking-tight">Config</h1>
-      <p className="text-[11px] text-ink-dim">
-        Native editor — porting is incremental.{' '}
-        <a href="/indi-allsky/config" className="text-info hover:underline">Open legacy editor</a>
-      </p>
     </div>
   );
 }
@@ -231,10 +227,10 @@ function Content() {
           {schema.intro && (
             <p className="text-xs text-ink-dim leading-relaxed max-w-3xl">{schema.intro}</p>
           )}
-          {pairGroups(schema.groups).map((pair, i) => (
-            <SectionPair
+          {pairGroups(schema.groups).map((row, i) => (
+            <SectionRow
               key={i}
-              groups={pair}
+              groups={row}
               config={draft ?? {}}
               defaults={q.data.base_config}
               errors={errors}
@@ -491,11 +487,10 @@ function ChangesPanel({
   );
 }
 
-function pairGroups(groups: FieldGroup[]): ([FieldGroup] | [FieldGroup, FieldGroup])[] {
-  const out: ([FieldGroup] | [FieldGroup, FieldGroup])[] = [];
+function pairGroups(groups: FieldGroup[]): FieldGroup[][] {
+  const out: FieldGroup[][] = [];
   for (let i = 0; i < groups.length; i += 2) {
-    if (i + 1 < groups.length) out.push([groups[i], groups[i + 1]]);
-    else out.push([groups[i]]);
+    out.push(groups.slice(i, i + 2));
   }
   return out;
 }

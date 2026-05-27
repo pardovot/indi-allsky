@@ -33,6 +33,15 @@ import TaskQueue from './pages/TaskQueue';
 import ConfigHistory from './pages/ConfigHistory';
 import ConfigRestore from './pages/ConfigRestore';
 import ConfigShell from './pages/config/ConfigShell';
+import Mask from './pages/Mask';
+import Gpio from './pages/Gpio';
+import ImageCircleHelper from './pages/ImageCircleHelper';
+import Astropanel from './pages/Astropanel';
+import Focus from './pages/Focus';
+import Network from './pages/Network';
+import CameraSimulator from './pages/CameraSimulator';
+import FitsViewer from './pages/FitsViewer';
+import ProcessFits from './pages/ProcessFits';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -143,6 +152,15 @@ export default function App() {
           <Route path="/taskqueue"         element={<ProtectedRoute><TaskQueue /></ProtectedRoute>} />
           <Route path="/config-history"    element={<ProtectedRoute><ConfigHistory /></ProtectedRoute>} />
           <Route path="/config-restore"    element={<ProtectedRoute><ConfigRestore /></ProtectedRoute>} />
+          <Route path="/mask"              element={<ProtectedRoute><Mask /></ProtectedRoute>} />
+          <Route path="/gpio"              element={<ProtectedRoute><Gpio /></ProtectedRoute>} />
+          <Route path="/image-circle"      element={<ProtectedRoute><ImageCircleHelper /></ProtectedRoute>} />
+          <Route path="/astropanel"        element={<ProtectedRoute><Astropanel /></ProtectedRoute>} />
+          <Route path="/focus"             element={<ProtectedRoute><Focus /></ProtectedRoute>} />
+          <Route path="/network"           element={<ProtectedRoute><Network /></ProtectedRoute>} />
+          <Route path="/camera-simulator"  element={<ProtectedRoute><CameraSimulator /></ProtectedRoute>} />
+          <Route path="/fits-viewer"       element={<ProtectedRoute><FitsViewer /></ProtectedRoute>} />
+          <Route path="/processing"        element={<ProtectedRoute><ProcessFits /></ProtectedRoute>} />
           <Route path="/config"            element={<ProtectedRoute><ConfigShell /></ProtectedRoute>} />
           <Route path="/config/:tab"       element={<ProtectedRoute><ConfigShell /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
