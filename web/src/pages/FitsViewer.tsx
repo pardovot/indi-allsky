@@ -58,6 +58,8 @@ function Content({ cameraId }: { cameraId: number | null }) {
   const [images, setImages] = useState<FitsImageEntry[]>([]);
   const [imageIdx, setImageIdx] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
+  const [imgErr, setImgErr] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const fetchImages = useCallback(
@@ -164,6 +166,18 @@ function Content({ cameraId }: { cameraId: number | null }) {
 
   const current = images[imageIdx];
 
+  useEffect(() => {
+    if (!current) { setImgSrc(null); return; }
+    let cancelled = false;
+    setImgSrc(null);
+    setImgErr(false);
+    api<{ image_b64: string | null }>(`/fits2jpeg?id=${current.id}`)
+      .then((d) => { if (!cancelled) setImgSrc(d.image_b64 ? `data:image/jpeg;base64,${d.image_b64}` : null); })
+      .catch(() => { if (!cancelled) setImgErr(true); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id]);
+
   return (
     <>
       <div className="w-full max-w-7xl flex items-center gap-2 flex-wrap text-xs text-ink-dim">
@@ -203,17 +217,19 @@ function Content({ cameraId }: { cameraId: number | null }) {
       </div>
 
       <div className="relative flex items-center justify-center w-full max-w-7xl flex-1 min-h-0">
-        {current ? (
+        {current && imgSrc ? (
           <img
             ref={imgRef}
-            src={resolveImageUrl(current.url)}
+            src={imgSrc}
             alt={current.date}
             onClick={toggleFullscreen}
             className="max-w-full max-h-[78vh] w-auto h-auto object-contain rounded-md cursor-zoom-in select-none ring-1 ring-edge"
           />
         ) : (
           <div className="aspect-video w-full max-w-3xl border border-edge rounded-lg flex items-center justify-center bg-bg-1/30">
-            <div className="text-ink-dim text-sm">{loading ? 'Loading…' : 'No image'}</div>
+            <div className="text-ink-dim text-sm">
+              {!current ? (loading ? 'Loading…' : 'No image') : imgErr ? 'Failed to load image' : 'Loading…'}
+            </div>
           </div>
         )}
       </div>

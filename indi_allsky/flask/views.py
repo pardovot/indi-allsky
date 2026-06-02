@@ -7732,7 +7732,7 @@ class JsonImageProcessingView(JsonView):
         from multiprocessing import Array
 
 
-        form_processing = IndiAllskyImageProcessingForm(data=request.json)
+        form_processing = IndiAllskyImageProcessingForm(data=request.json, meta={'csrf': False})
         if not form_processing.validate():
             form_errors = form_processing.errors  # this must be a property
             form_errors['form_global'] = ['Please fix the errors above']

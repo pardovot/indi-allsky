@@ -2050,6 +2050,20 @@ def fitsimageviewer():
     return AjaxFitsImageViewerView().dispatch_request()
 
 
+@bp_api_v2.route('/fits2jpeg', methods=['GET'])
+@jwt_required()
+def fits2jpeg():
+    """Convert a FITS frame to a base64 JPEG for the FITS viewer (reads request.args['id'])."""
+    import base64
+    from .views import Fits2JpegView
+    result = Fits2JpegView().dispatch_request()
+    if isinstance(result, tuple):
+        message, status = result
+        return jsonify({'image_b64': None, 'message': message}), status
+    image_b64 = base64.b64encode(result.get_data()).decode('utf-8')
+    return jsonify({'image_b64': image_b64})
+
+
 @bp_api_v2.route('/processing', methods=['POST'])
 @jwt_required()
 def processing():
