@@ -188,7 +188,7 @@ function Content() {
 
   return (
     <div className="flex flex-col gap-4">
-      <nav className="flex gap-1 flex-wrap border-b border-edge -mb-px overflow-x-auto">
+      <nav className="flex gap-1 flex-wrap border-b border-edge -mb-px">
         {TAB_REGISTRY.map((t) => {
           const tone = TONE_CLS[t.tone ?? 'light'];
           const active = t.id === activeId;

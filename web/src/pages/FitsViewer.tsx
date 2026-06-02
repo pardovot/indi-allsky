@@ -231,7 +231,7 @@ function Content({ cameraId }: { cameraId: number | null }) {
             </a>
           )}
           <a
-            href={`/indi-allsky/processing?type=light&id=${current.id}`}
+            href={`/processing?type=light&id=${current.id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="px-2 py-1 rounded-md border text-xs hover:opacity-80 transition-opacity bg-success/20 text-success border-success/30"

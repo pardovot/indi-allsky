@@ -295,7 +295,7 @@ export default function Images() {
               <ActionBadge color="danger" label="FITS" href={resolveImageUrl(current.fits || '')} download />
             )}
             {current.fits_id && (
-              <ActionBadge color="success" label="FITS Processing" href={`/indi-allsky/processing?type=light&id=${current.fits_id}`} />
+              <ActionBadge color="success" label="FITS Processing" href={`/processing?type=light&id=${current.fits_id}`} />
             )}
             {current.raw_id && (
               <ActionBadge color="warn" label="RAW" href={`/view-raw?id=${current.raw_id}`} />

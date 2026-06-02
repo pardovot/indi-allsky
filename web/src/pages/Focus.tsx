@@ -170,20 +170,20 @@ function Content({ cameraId }: { cameraId: number }) {
         </div>
       )}
 
-      <div className="flex justify-center bg-bg-1 border border-edge rounded-lg p-2">
+      <div className="flex items-center justify-center bg-bg-1 border border-edge rounded-lg p-2 h-[70vh]">
         {q.isLoading ? (
-          <div className="text-ink-dim text-sm py-8">Loading…</div>
+          <div className="text-ink-dim text-sm">Loading…</div>
         ) : q.error || !d ? (
-          <div className="text-danger text-sm py-8">Failed to load focus image</div>
+          <div className="text-danger text-sm">Failed to load focus image</div>
         ) : d.image_b64 ? (
           <img
             src={`data:image/jpeg;base64,${d.image_b64}`}
             alt="Focus crop"
-            className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
+            className="h-full w-full object-contain"
             style={{ imageRendering: 'pixelated' }}
           />
         ) : (
-          <div className="text-ink-dim text-sm py-8">No image available</div>
+          <div className="text-ink-dim text-sm">No image available</div>
         )}
       </div>
 

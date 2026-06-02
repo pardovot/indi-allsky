@@ -15,17 +15,7 @@ export default defineConfig(function (_a) {
             strictPort: true,
             host: true,
             proxy: {
-                '/indi-allsky/api': {
-                    target: target,
-                    changeOrigin: true,
-                    secure: false,
-                },
-                '/indi-allsky/images': {
-                    target: target,
-                    changeOrigin: true,
-                    secure: false,
-                },
-                '/indi-allsky/static': {
+                '/indi-allsky': {
                     target: target,
                     changeOrigin: true,
                     secure: false,

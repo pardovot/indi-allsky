@@ -115,13 +115,13 @@ function DarksContent({ cameraId }: { cameraId: number }) {
 
   return (
     <>
-      <DarkTable title="Dark Frames" rows={q.data.darks} showMethod />
-      <DarkTable title="Bad Pixel Maps" rows={q.data.bpm} />
+      <DarkTable title="Dark Frames" rows={q.data.darks} frameType="dark" showMethod />
+      <DarkTable title="Bad Pixel Maps" rows={q.data.bpm} frameType="bpm" />
     </>
   );
 }
 
-function DarkTable({ title, rows, showMethod }: { title: string; rows: DarkRow[]; showMethod?: boolean }) {
+function DarkTable({ title, rows, frameType, showMethod }: { title: string; rows: DarkRow[]; frameType: string; showMethod?: boolean }) {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [sortKey, setSortKey] = useState<ColKey | null>(null);
@@ -248,9 +248,12 @@ function DarkTable({ title, rows, showMethod }: { title: string; rows: DarkRow[]
                   </td>
                 ))}
                 <td className="px-3 py-1">
-                  {r.url
-                    ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-info hover:text-accent transition-colors text-xs">Download</a>
-                    : <span className="text-ink-dim text-xs">—</span>}
+                  <div className="flex items-center gap-3">
+                    <a href={`/processing?type=${frameType}&id=${r.id}`} target="_blank" rel="noopener noreferrer" className="text-info hover:text-accent transition-colors text-xs">View</a>
+                    {r.url
+                      ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-info hover:text-accent transition-colors text-xs">Download</a>
+                      : <span className="text-ink-dim text-xs">—</span>}
+                  </div>
                 </td>
               </tr>
             ))}

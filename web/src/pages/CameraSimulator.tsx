@@ -452,7 +452,7 @@ function Content() {
       </p>
 
       <div className="flex justify-center">
-        <canvas ref={canvasRef} className="w-3/4 max-w-full bg-bg-1 border border-edge rounded" />
+        <canvas ref={canvasRef} className="w-1/2 max-w-2xl bg-bg-1 border border-edge rounded" />
       </div>
 
       <div className="flex justify-center">
