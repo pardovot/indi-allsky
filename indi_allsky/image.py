@@ -256,6 +256,20 @@ class ImageWorker(Process):
                 self.processImage(i_dict)
 
 
+    def getFocusMode(self, camera_id):
+        """
+        Focus mode skips most of the processing pipeline.  It is re-read for every
+        frame so a focus session started from the web interface takes effect
+        without restarting this worker.
+        """
+        session = self._miscDb.getFocusSession()
+
+        if session and session['camera_id'] == camera_id:
+            return True
+
+        return self.config.get('FOCUS_MODE', False)
+
+
     def processImage(self, i_dict):
         import piexif
 
@@ -295,6 +309,8 @@ class ImageWorker(Process):
         camera_id = i_dict['camera_id']
         filename_t = i_dict.get('filename_t')
         sqm_exposure = i_dict.get('sqm_exposure')
+
+        self.image_processor.focus_mode = self.getFocusMode(camera_id)
 
 
         # libcamera
@@ -708,7 +724,7 @@ class ImageWorker(Process):
 
 
         if self.config.get('CIRCULAR_DISPLAY', {}).get('ENABLE'):
-            if not self.config.get('FOCUS_MODE', False):
+            if not self.image_processor.focus_mode:
                 circular_display_image = self.image_processor.circular_display(i_ref.binning)
                 self.write_circular_display_img(circular_display_image, jpeg_exif=jpeg_exif)
 
@@ -1715,7 +1731,7 @@ class ImageWorker(Process):
 
 
         ### disable timelapse images in focus mode
-        if self.config.get('FOCUS_MODE', False):
+        if self.image_processor.focus_mode:
             logger.warning('Focus mode enabled, not saving timelapse image')
             #self.write_focus_fit(data)
             #self.write_focus_png(data)
@@ -1907,7 +1923,7 @@ class ImageWorker(Process):
 
 
         ### disable timelapse images in focus mode
-        if self.config.get('FOCUS_MODE', False):
+        if self.image_processor.focus_mode:
             logger.warning('Focus mode enabled, not saving timelapse image')
             tmpfile_name.unlink()
             return

@@ -7135,28 +7135,24 @@ class FocusView(TemplateView):
 class JsonFocusView(JsonView):
     decorators = [login_required]
 
+    magnification_max = 40.0
+
+
     def __init__(self, **kwargs):
         super(JsonFocusView, self).__init__(**kwargs)
 
 
     def dispatch_request(self):
         import cv2
+        import numpy
         from ..stars import IndiAllSkyStars
-
-        zoom = int(request.args.get('zoom', 2))
-        x_offset = int(request.args.get('x_offset', 0))
-        y_offset = int(request.args.get('y_offset', 0))
-
-
-        sqm_mask = {
-            1 : None,  # assume bin 1
-        }
-
-        stars_detect_o = IndiAllSkyStars(self.indi_allsky_config, mask=sqm_mask)
+        from .. import focus_metrics
 
 
         json_data = dict()
-        json_data['focus_mode'] = self.indi_allsky_config.get('FOCUS_MODE', False)
+        json_data['focus_mode'] = bool(
+            self.indi_allsky_config.get('FOCUS_MODE', False) or self._miscDb.getFocusSession()
+        )
 
         image_dir = Path(self.indi_allsky_config['IMAGE_FOLDER']).absolute()
         latest_image_p = image_dir.joinpath('latest.{0:s}'.format(self.indi_allsky_config['IMAGE_FILE_TYPE']))
@@ -7167,6 +7163,33 @@ class JsonFocusView(JsonView):
         if not latest_image_p.exists():
             app.logger.error('Latest image does not exist')
             return jsonify({}), 400
+
+
+        frame_ts = latest_image_p.stat().st_mtime
+        json_data['frame_ts'] = frame_ts
+
+        # the caller sends the timestamp it already has so an unchanged frame does
+        # not have to be cropped, measured and re-encoded on every poll
+        try:
+            since = float(request.args.get('since', 0))
+        except ValueError:
+            since = 0
+
+        same_frame = bool(since) and abs(since - frame_ts) < 0.001
+
+        # the measured region moved while the frame did not, so the measurements
+        # are stale even though the picture the caller holds is not
+        recompute = request.args.get('recompute') == '1'
+
+        if same_frame and not recompute:
+            json_data['changed'] = False
+            return jsonify(json_data)
+
+
+        json_data['changed'] = True
+
+        # only the region moved, so the caller keeps the image it already has
+        send_image = not same_frame
 
 
         #focus_start = time.time()
@@ -7190,7 +7213,6 @@ class JsonFocusView(JsonView):
                 app.logger.error('Unable to read %s', latest_image_p)
                 return jsonify({}), 400
         elif latest_image_p.suffix in ('.fit', '.fits'):
-            import numpy
             from astropy.io import fits
 
             try:
@@ -7206,7 +7228,6 @@ class JsonFocusView(JsonView):
 
         else:
             # Pillow supports remaining image types
-            import numpy
             import PIL
             from PIL import Image
 
@@ -7218,57 +7239,318 @@ class JsonFocusView(JsonView):
                 return jsonify({}), 400
 
 
-        stars = stars_detect_o.detectObjects(image_data, 1)  # assume bin 1
-
-
         image_height, image_width = image_data.shape[:2]
 
-        ### get ROI based on zoom
-        x1 = int((image_width / 2) - (image_width / zoom) + x_offset)
-        y1 = int((image_height / 2) - (image_height / zoom) - y_offset)
-        x2 = int((image_width / 2) + (image_width / zoom) + x_offset)
-        y2 = int((image_height / 2) + (image_height / zoom) - y_offset)
+        magnification, center_x, center_y = self.get_view(image_width, image_height)
 
-        image_roi = image_data[
-            y1:y2,
-            x1:x2,
-        ]
+        json_data['magnification'] = magnification
+        json_data['center_x'] = center_x
+        json_data['center_y'] = center_y
+        json_data['image_width'] = image_width
+        json_data['image_height'] = image_height
 
 
-        ### OpenCV
-        _, json_image = cv2.imencode('.jpg', image_roi, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        #_, json_image = cv2.imencode('.png', image_roi, [cv2.IMWRITE_PNG_COMPRESSION, 5])
-        json_image_buffer = io.BytesIO(json_image.tobytes())
+        ### The region the measurements describe.  A caller that magnifies the
+        ### returned image itself asks for the whole frame and reports the part of
+        ### it being looked at here, so panning does not need a new image.
+        metrics_view = self.get_metrics_view(magnification, center_x, center_y)
+
+        metrics_roi, metrics_box = self.crop_roi(image_data, *metrics_view)
+
+        json_data['metrics_roi'] = metrics_box
 
 
-        ### pillow
-        #from PIL import Image
-        #json_image_buffer = io.BytesIO()
-        #img = Image.fromarray(cv2.cvtColor(image_roi, cv2.COLOR_BGR2RGB))
-        #img.save(json_image_buffer, format='JPEG', quality=90)
-        #img.save(json_image_buffer, format='PNG', compress_level=5)
+        ### detect stars in what is being viewed rather than the whole frame
+        roi_height_px, roi_width_px = metrics_roi.shape[:2]
+
+        sqm_mask = {
+            1 : numpy.full((roi_height_px, roi_width_px), 255, dtype=numpy.uint8),  # assume bin 1
+        }
+
+        stars_detect_o = IndiAllSkyStars(self.indi_allsky_config, mask=sqm_mask)
+
+        if min(roi_height_px, roi_width_px) > stars_detect_o.star_template_w:
+            stars = stars_detect_o.detectObjects(metrics_roi, 1)  # assume bin 1
+        else:
+            # template matching needs a region larger than the star template
+            stars = []
 
 
-        json_image_b64 = base64.b64encode(json_image_buffer.getvalue())
+        if send_image:
+            if metrics_view == (magnification, center_x, center_y):
+                image_roi = metrics_roi
+                json_data['roi'] = metrics_box
+            else:
+                image_roi, image_box = self.crop_roi(image_data, magnification, center_x, center_y)
+                json_data['roi'] = image_box
 
-        json_data['image_b64'] = json_image_b64.decode('utf-8')
+
+            ### OpenCV
+            _, json_image = cv2.imencode('.jpg', image_roi, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            #_, json_image = cv2.imencode('.png', image_roi, [cv2.IMWRITE_PNG_COMPRESSION, 5])
+            json_image_buffer = io.BytesIO(json_image.tobytes())
+
+
+            ### pillow
+            #from PIL import Image
+            #json_image_buffer = io.BytesIO()
+            #img = Image.fromarray(cv2.cvtColor(image_roi, cv2.COLOR_BGR2RGB))
+            #img.save(json_image_buffer, format='JPEG', quality=90)
+            #img.save(json_image_buffer, format='PNG', compress_level=5)
+
+
+            json_image_b64 = base64.b64encode(json_image_buffer.getvalue())
+
+            json_data['image_b64'] = json_image_b64.decode('utf-8')
 
 
         ### Blur detection
         #vl_start = time.time()
 
-        ### determine variance of laplacian
-        blur_score = cv2.Laplacian(image_roi, cv2.CV_32F).var()
-        json_data['blur_score'] = float(blur_score)
+        json_data['blur_score'] = focus_metrics.blur_score(metrics_roi)
         json_data['star_count'] = len(stars)
 
         #vl_elapsed_s = time.time() - vl_start
         #app.logger.info('Variance of laplacien in %0.4f s', vl_elapsed_s)
 
+
+        if len(metrics_roi.shape) == 2:
+            grey_roi = metrics_roi
+        else:
+            grey_roi = cv2.cvtColor(metrics_roi, cv2.COLOR_BGR2GRAY)
+
+
+        # detections are the top left corner of the star template, so half the
+        # template reaches the star itself
+        hfd, hfd_samples = focus_metrics.half_flux_diameter(
+            grey_roi,
+            stars,
+            point_offset=int(stars_detect_o.star_template_w / 2),
+        )
+
+        json_data['hfd'] = hfd
+        json_data['hfd_samples'] = hfd_samples
+
+        json_data.update(focus_metrics.exposure_stats(grey_roi))
+
         #focus_elapsed_s = time.time() - focus_start
         #app.logger.info('Focus processing in %0.4f s', focus_elapsed_s)
 
         return jsonify(json_data)
+
+
+    def crop_roi(self, image_data, magnification, center_x, center_y):
+        """
+        Crop a normalised region, kept inside the frame so panning to an edge
+        cannot run off it.  Returns the crop and its pixel bounds.
+        """
+        image_height, image_width = image_data.shape[:2]
+
+        roi_width = image_width / magnification
+        roi_height = image_height / magnification
+
+        roi_center_x = min(max(center_x * image_width, roi_width / 2), image_width - (roi_width / 2))
+        roi_center_y = min(max(center_y * image_height, roi_height / 2), image_height - (roi_height / 2))
+
+        x1 = int(roi_center_x - (roi_width / 2))
+        y1 = int(roi_center_y - (roi_height / 2))
+        x2 = int(roi_center_x + (roi_width / 2))
+        y2 = int(roi_center_y + (roi_height / 2))
+
+        return image_data[y1:y2, x1:x2], [x1, y1, x2, y2]
+
+
+    def get_metrics_view(self, magnification, center_x, center_y):
+        """
+        Region the measurements should describe.  Defaults to whatever is being
+        returned as the image.
+        """
+        try:
+            metrics_mag = float(request.args['roi_mag'])
+            metrics_cx = float(request.args.get('roi_cx', 0.5))
+            metrics_cy = float(request.args.get('roi_cy', 0.5))
+        except (KeyError, ValueError):
+            return magnification, center_x, center_y
+
+
+        metrics_mag = min(max(metrics_mag, 1.0), self.magnification_max)
+        metrics_cx = min(max(metrics_cx, 0.0), 1.0)
+        metrics_cy = min(max(metrics_cy, 0.0), 1.0)
+
+        return metrics_mag, metrics_cx, metrics_cy
+
+
+    def get_view(self, image_width, image_height):
+        """
+        Magnification with a normalised centre.  1.0 shows the whole frame, 4.0
+        shows a quarter of its width.  The zoom/x_offset/y_offset arguments used
+        by the older focus page are accepted and converted.
+        """
+        try:
+            magnification = float(request.args['mag'])
+            center_x = float(request.args.get('cx', 0.5))
+            center_y = float(request.args.get('cy', 0.5))
+        except (KeyError, ValueError):
+            try:
+                zoom = float(request.args.get('zoom', 2))
+                x_offset = float(request.args.get('x_offset', 0))
+                y_offset = float(request.args.get('y_offset', 0))
+            except ValueError:
+                zoom = 2.0
+                x_offset = 0.0
+                y_offset = 0.0
+
+            # the old scale cropped to 2/zoom of the frame
+            magnification = zoom / 2
+            center_x = 0.5 + (x_offset / image_width)
+            center_y = 0.5 - (y_offset / image_height)  # y offsets were inverted
+
+
+        magnification = min(max(magnification, 1.0), self.magnification_max)
+        center_x = min(max(center_x, 0.0), 1.0)
+        center_y = min(max(center_y, 0.0), 1.0)
+
+        return magnification, center_x, center_y
+
+
+    def session_get(self, camera_id=None):
+        """
+        Current focus session plus the limits the focus page needs to build its
+        exposure and gain controls.
+        """
+        from .. import focus_session
+
+        session = self._miscDb.getFocusSession()
+
+        if isinstance(camera_id, type(None)) and session:
+            camera_id = session['camera_id']
+
+        return jsonify({
+            'session'  : session,
+            'limits'   : self.get_camera_limits(camera_id),
+            'defaults' : self.get_last_frame_settings(camera_id),
+            'ttl'      : focus_session.DEFAULT_TTL,
+        })
+
+
+    def session_set(self, data):
+        """
+        Start, update or extend a focus session.  Values are clamped to what the
+        camera reported so a bad request cannot wedge the capture worker.
+        """
+        from .. import focus_session
+
+        try:
+            camera_id = int(data['camera_id'])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'error': 'camera_id is required'}), 400
+
+
+        limits = self.get_camera_limits(camera_id)
+
+        if not limits:
+            return jsonify({'error': 'Camera not found'}), 400
+
+
+        # an unspecified value keeps what the session already had, otherwise it
+        # starts from the last frame the camera took so enabling focus mode does
+        # not black out or blow out the view
+        defaults = self._miscDb.getFocusSession() or self.get_last_frame_settings(camera_id)
+
+        try:
+            exposure = float(data.get('exposure', defaults.get('exposure', limits['exposure_default'])))
+            gain = float(data.get('gain', defaults.get('gain', limits['gain_min'])))
+            binning = int(data.get('binning', defaults.get('binning', 1)))
+            interval = float(data.get('interval', defaults.get('interval', focus_session.DEFAULT_INTERVAL)))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid focus parameters'}), 400
+
+
+        session = focus_session.build(
+            camera_id,
+            focus_session.clamp(exposure, limits['exposure_min'], limits['exposure_max']),
+            focus_session.clamp(gain, limits['gain_min'], limits['gain_max']),
+            int(focus_session.clamp(binning, limits['binning_min'], limits['binning_max'])),
+            interval,
+        )
+
+        self._miscDb.setFocusSession(session)
+
+        app.logger.warning(
+            'Focus session set: %0.6fs @ gain %0.2f / bin %d every %0.1fs',
+            session['exposure'],
+            session['gain'],
+            session['binning'],
+            session['interval'],
+        )
+
+        return jsonify({'session': session, 'limits': limits})
+
+
+    def session_clear(self):
+        from .. import focus_session
+
+        session = self._miscDb.getFocusSession()
+
+        if session:
+            session['active'] = False
+            self._miscDb.setState(focus_session.STATE_KEY, focus_session.encode(session))
+            app.logger.warning('Focus session cleared')
+
+        return jsonify({'session': None})
+
+
+    def get_last_frame_settings(self, camera_id):
+        """
+        Exposure, gain and binning of the most recent image for a camera.  No rows
+        are written while focus mode runs, so this reflects normal capture.
+        """
+        try:
+            latest_image = IndiAllSkyDbImageTable.query\
+                .filter(IndiAllSkyDbImageTable.camera_id == int(camera_id))\
+                .order_by(IndiAllSkyDbImageTable.createDate.desc())\
+                .first()
+        except (TypeError, ValueError):
+            return {}
+
+        if not latest_image:
+            return {}
+
+
+        return {
+            'exposure' : float(latest_image.exposure),
+            'gain'     : float(latest_image.gain),
+            'binning'  : int(latest_image.binmode),
+        }
+
+
+    def get_camera_limits(self, camera_id):
+        """
+        Exposure, gain and binning ranges reported by the camera when it connected.
+        """
+        try:
+            camera = IndiAllSkyDbCameraTable.query\
+                .filter(IndiAllSkyDbCameraTable.id == int(camera_id))\
+                .one()
+        except (TypeError, ValueError, NoResultFound):
+            return {}
+
+
+        # cameras that never reported a range still need usable slider bounds
+        exposure_min = camera.minExposure if camera.minExposure else 0.000032
+        exposure_max = camera.maxExposure if camera.maxExposure else self.indi_allsky_config.get('CCD_EXPOSURE_MAX', 15.0)
+
+        return {
+            'exposure_min'     : float(exposure_min),
+            'exposure_max'     : float(exposure_max),
+            'exposure_default' : float(self.indi_allsky_config.get('CCD_EXPOSURE_DEF') or exposure_min),
+            'gain_min'         : float(camera.minGain if not isinstance(camera.minGain, type(None)) else 0.0),
+            'gain_max'         : float(camera.maxGain if camera.maxGain else 100.0),
+            'binning_min'      : int(camera.minBinning if camera.minBinning else 1),
+            'binning_max'      : int(camera.maxBinning if camera.maxBinning else 1),
+            'width'            : int(camera.width or 0),
+            'height'           : int(camera.height or 0),
+        }
 
 
 class AjaxFocusControllerView(BaseView):

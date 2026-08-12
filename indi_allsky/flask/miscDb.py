@@ -37,6 +37,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm.exc import NoResultFound
 
 from .. import constants
+from .. import focus_session
 #from ..exceptions import BadImage
 
 logger = logging.getLogger('indi_allsky')
@@ -1106,6 +1107,24 @@ class miscDb(object):
 
 
         return value
+
+
+    def getFocusSession(self):
+        """
+        Returns the active focus session document, or None when no session is
+        running.  Expired sessions read as None without being deleted.
+        """
+        try:
+            session_raw = self.getState(focus_session.STATE_KEY)
+        except NoResultFound:
+            return None
+
+
+        return focus_session.decode(session_raw)
+
+
+    def setFocusSession(self, session):
+        self.setState(focus_session.STATE_KEY, focus_session.encode(session))
 
 
     def removeState(self, key):

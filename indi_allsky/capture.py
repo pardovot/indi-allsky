@@ -54,6 +54,8 @@ class CaptureWorker(Process):
 
     periodic_tasks_offset = 300.0  # 5 minutes
 
+    focus_check_offset = 1.0  # how often the focus session state is re-read
+
 
     SENSOR_SLOTS = (
         ['sensor_user_0', 'Camera Temp'],  # mutable
@@ -249,6 +251,11 @@ class CaptureWorker(Process):
         self.reconfigure_camera = False
 
         self.focus_mode = self.config.get('FOCUS_MODE', False)  # focus mode takes images as fast as possible
+
+        # a focus session set from the web interface overrides exposure, gain,
+        # binning and the frame interval without touching the configuration
+        self.focus_session = None
+        self.next_focus_check_time = 0.0
 
         self.night_sun_radians = math.radians(self.config['NIGHT_SUN_ALT_DEG'])
         self.night_moonmode_radians = math.radians(self.config['NIGHT_MOONMODE_ALT_DEG'])
@@ -519,7 +526,10 @@ class CaptureWorker(Process):
                 self.getGpsPosition()
 
 
-                if self.config.get('CAPTURE_PAUSE'):
+                self.checkFocusSession()
+
+
+                if self.config.get('CAPTURE_PAUSE') and not self.focus_session:
                     logger.warning('*** CAPTURE PAUSED ***')
 
                     now_time = time.time()
@@ -536,10 +546,10 @@ class CaptureWorker(Process):
                         return
 
 
-                    time.sleep(31)  # prime number
+                    self.focusIdleSleep(31)  # prime number
                     continue
 
-                elif not self.night and not self.config.get('DAYTIME_CAPTURE'):
+                elif not self.night and not self.config.get('DAYTIME_CAPTURE') and not self.focus_session:
                     logger.info('Daytime capture disabled')
                     self.generate_timelapse_flag = False
 
@@ -557,7 +567,7 @@ class CaptureWorker(Process):
                         return
 
 
-                    time.sleep(31)  # prime number
+                    self.focusIdleSleep(31)  # prime number
                     continue
 
 
@@ -587,6 +597,13 @@ class CaptureWorker(Process):
                     now_time = time.time()
                     if now_time >= loop_end:
                         break
+
+
+                    if self.checkFocusSession() and self.focus_session:
+                        # do not make the user wait out the normal exposure period
+                        # for the first frame of a focus session
+                        next_frame_time = now_time
+
 
                     last_camera_ready = camera_ready
 
@@ -703,6 +720,10 @@ class CaptureWorker(Process):
                         frame_start_time = now_time
 
 
+                        if self.focus_session:
+                            self.applyFocusExposure()
+
+
                         if not self.sqm_camera_enable or self.focus_mode:
                             # Normal exposure
                             self.shoot(
@@ -797,7 +818,13 @@ class CaptureWorker(Process):
                         if self.focus_mode:
                             # Start frame immediately in focus mode
                             logger.warning('*** FOCUS MODE ENABLED ***')
-                            next_frame_time = now_time + self.config.get('FOCUS_DELAY', 4.0) + self.add_period_delay
+
+                            if self.focus_session:
+                                focus_interval = self.focus_session['interval']
+                            else:
+                                focus_interval = self.config.get('FOCUS_DELAY', 4.0)
+
+                            next_frame_time = now_time + focus_interval + self.add_period_delay
                         elif waiting_for_sqm_frame:
                             # take next exposure as quickly as possible
                             next_frame_time = frame_start_time
@@ -2237,6 +2264,83 @@ class CaptureWorker(Process):
         logger.info('Taking %0.8fs exposure (gain %0.2f / bin %d)', exposure, gain, binning)
 
         self.indiclient.setCcdExposure(exposure, gain, binning, sync=sync, timeout=timeout, sqm_exposure=sqm_exposure)
+
+
+    def checkFocusSession(self):
+        """
+        Re-read the focus session written by the web interface.  Returns True when
+        the session started or stopped since the last check.
+        """
+        now_time = time.time()
+
+        if now_time < self.next_focus_check_time:
+            return False
+
+        self.next_focus_check_time = now_time + self.focus_check_offset
+
+
+        # End the read transaction first.  Without this the state row is served
+        # from the snapshot taken earlier in the loop and web updates are missed.
+        db.session.rollback()
+
+        session = self._miscDb.getFocusSession()
+
+        if session and session.get('camera_id') != self.camera_id:
+            # a session for a different camera is not ours to act on
+            session = None
+
+
+        was_active = bool(self.focus_session)
+        self.focus_session = session
+
+        self.focus_mode = bool(session) or self.config.get('FOCUS_MODE', False)
+
+        if bool(session) == was_active:
+            return False
+
+
+        if session:
+            logger.warning(
+                '*** FOCUS SESSION STARTED *** %0.6fs @ gain %0.2f / bin %d every %0.1fs',
+                session['exposure'],
+                session['gain'],
+                session['binning'],
+                session['interval'],
+            )
+        else:
+            logger.warning('*** FOCUS SESSION ENDED ***')
+
+        return True
+
+
+    def applyFocusExposure(self):
+        """
+        Force the next exposure to the focus session values, overriding whatever
+        the auto exposure calculation put in the shared values.
+        """
+        with self.exposure_av.get_lock():
+            self.exposure_av[constants.EXPOSURE_NEXT] = float(self.focus_session['exposure'])
+
+        with self.gain_av.get_lock():
+            self.gain_av[constants.GAIN_NEXT] = float(self.focus_session['gain'])
+
+        with self.binning_av.get_lock():
+            self.binning_av[constants.BINNING_NEXT] = int(self.focus_session['binning'])
+
+
+    def focusIdleSleep(self, sleep_s):
+        """
+        Sleep in slices while capture is paused or disabled for daytime, returning
+        early when a focus session starts so focusing does not have to wait out
+        the full idle period.
+        """
+        sleep_end = time.time() + sleep_s
+
+        while time.time() < sleep_end:
+            time.sleep(1.0)
+
+            if self.checkFocusSession() and self.focus_session:
+                return
 
 
     def setTimeSystemd(self, new_datetime_utc):

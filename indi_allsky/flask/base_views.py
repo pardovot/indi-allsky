@@ -258,7 +258,7 @@ class BaseView(View):
         ### assuming indi-allsky process is running if we reach this point
 
 
-        if self.indi_allsky_config.get('FOCUS_MODE', False):
+        if self.indi_allsky_config.get('FOCUS_MODE', False) or self._miscDb.getFocusSession():
             data['status'] = '<span class="text-warning">FOCUS MODE</span>'
             return data
 

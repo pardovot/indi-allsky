@@ -1913,7 +1913,36 @@ def astropanel():
 @jwt_required()
 def focus_data():
     from .views import JsonFocusView
-    return JsonFocusView().dispatch_request()  # reads request.args: zoom, x_offset, y_offset
+    return JsonFocusView().dispatch_request()  # reads request.args: mag, cx, cy, since
+
+
+@bp_api_v2.route('/focus/session', methods=['GET'])
+@jwt_required()
+def focus_session_get():
+    from .views import JsonFocusView
+    return JsonFocusView().session_get(request.args.get('camera_id'))
+
+
+@bp_api_v2.route('/focus/session', methods=['POST'])
+@jwt_required()
+def focus_session_post():
+    from flask_jwt_extended import current_user as jwt_user
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'error': 'admin required'}), 403
+
+    from .views import JsonFocusView
+    return JsonFocusView().session_set(request.json or {})
+
+
+@bp_api_v2.route('/focus/session', methods=['DELETE'])
+@jwt_required()
+def focus_session_delete():
+    from flask_jwt_extended import current_user as jwt_user
+    if jwt_user is None or not getattr(jwt_user, 'admin', False):
+        return jsonify({'error': 'admin required'}), 403
+
+    from .views import JsonFocusView
+    return JsonFocusView().session_clear()
 
 
 @bp_api_v2.route('/focus/controller', methods=['POST'])
